@@ -1,0 +1,19 @@
+# Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
+<<<<<<< HEAD
+_commit: 1.1.1
+_src_path: gh:algorandfoundation/algokit-react-frontend-template
+author_email: sarthaknimje@gmail.com
+author_name: sarthak nimje
+preset_name: starter
+project_name: ALGO-frontend
+=======
+_commit: 2.1.6
+_src_path: gh:algorandfoundation/algokit-fullstack-template
+author_email: sarthaknimje@gmail.com
+author_name: sarthak nimje
+contract_name: algo
+deployment_language: python
+preset_name: starter
+project_name: ALGO
+>>>>>>> 8516c4666f58397b41455b52217f67b535621064
+

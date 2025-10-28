@@ -15,6 +15,10 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 import google.auth.exceptions
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-change-in-production'
@@ -38,7 +42,6 @@ YOUTUBE_CLIENT_SECRET = os.getenv('YOUTUBE_CLIENT_SECRET', 'your-youtube-client-
 YOUTUBE_REDIRECT_URI = os.getenv('YOUTUBE_REDIRECT_URI', 'http://localhost:5175/auth/youtube/callback')
 YOUTUBE_SCOPES = ['https://www.googleapis.com/auth/youtube.readonly']
 
-# Simple in-memory storage for YouTube credentials (for demo purposes)
 # In production, use a proper database or Redis
 youtube_sessions = {}
 
@@ -46,7 +49,7 @@ youtube_sessions = {}
 algod_client = algod.AlgodClient(ALGOD_TOKEN, ALGOD_SERVER, ALGOD_PORT)
 
 # Creator account mnemonic (for demo purposes - in production, use proper key management)
-CREATOR_MNEMONIC = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon"
+CREATOR_MNEMONIC = "alter green actual grab spoon okay faith repeat smile report easily retire plate enact vacuum spin bachelor rate where service settle nice north above soul"
 
 # Initialize database
 def init_db():
@@ -354,6 +357,75 @@ def youtube_auth_status():
             "error": str(e)
         })
 
+@app.route('/test-create-token', methods=['POST'])
+def test_create_token():
+    """Test endpoint to create a token without YouTube auth"""
+    try:
+        data = request.get_json()
+        
+        # Use the creator account directly
+        private_key = mnemonic.to_private_key(CREATOR_MNEMONIC)
+        creator_address = account.address_from_private_key(private_key)
+        
+        # Create ASA
+        asset_id = create_asa(
+            private_key=private_key,
+            creator_address=creator_address,
+            asset_name=data['token_name'][:32],  # Truncate to 32 chars
+            unit_name=data['token_symbol'],
+            total_supply=int(data['total_supply']),
+            decimals=6,
+            default_frozen=False,
+            manager_address=creator_address,
+            reserve_address=creator_address,
+            freeze_address=creator_address,
+            clawback_address=creator_address,
+            url="https://creatorvault.com",
+            metadata_hash=None
+        )[0]  # Get just the asset ID
+        
+        # Calculate market cap
+        market_cap = float(data['total_supply']) * float(data['initial_price'])
+        
+        # Store in database
+        conn = sqlite3.connect('creatorvault.db')
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO tokens (asa_id, creator, token_name, token_symbol, total_supply, 
+                              current_price, market_cap, youtube_channel_title, youtube_subscribers)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            asset_id, 
+            creator_address, 
+            data['token_name'], 
+            data['token_symbol'], 
+            int(data['total_supply']),
+            float(data['initial_price']), 
+            market_cap,
+            data.get('youtube_channel_title', 'Test Channel'),
+            data.get('youtube_subscribers', 1000)
+        ))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            "success": True,
+            "asset_id": asset_id,
+            "creator_address": creator_address,
+            "token_name": data['token_name'],
+            "token_symbol": data['token_symbol'],
+            "total_supply": int(data['total_supply']),
+            "current_price": float(data['initial_price']),
+            "market_cap": market_cap
+        })
+        
+    except Exception as e:
+        print(f"❌ Error creating test token: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
 @app.route('/create-creator-token', methods=['POST'])
 def create_creator_token():
     """Create a creator token (ASA)"""
@@ -392,11 +464,12 @@ def create_creator_token():
         channel_title = channel['snippet']['title']
         subscribers = int(channel['statistics'].get('subscriberCount', 0))
         
-        # Generate creator account
-        private_key, creator_address = account.generate_account()
+        # Use the funded creator account
+        private_key = mnemonic.to_private_key(CREATOR_MNEMONIC)
+        creator_address = account.address_from_private_key(private_key)
         
         # Create ASA
-        asset_id = create_asa(
+        asset_id, txid, confirmed_round = create_asa(
             private_key=private_key,
             creator_address=creator_address,
             asset_name=data['token_name'][:32],  # Truncate to 32 chars
@@ -410,7 +483,10 @@ def create_creator_token():
             clawback_address=creator_address,
             url="https://creatorvault.com",
             metadata_hash=None
-        )[0]  # Get just the asset ID
+        )
+        
+        # Tokens are automatically held by the creator account (reserve address)
+        print(f"✅ Creator automatically holds {data['total_supply']} tokens (reserve address)")
         
         # Calculate market cap
         market_cap = float(data['total_supply']) * float(data['token_price'])
@@ -507,6 +583,7 @@ def create_video_token():
             }), 404
         
         video = video_response['items'][0]
+        video_title = video['snippet']['title']
         video_views = int(video['statistics'].get('viewCount', 0))
         video_likes = int(video['statistics'].get('likeCount', 0))
         video_comments = int(video['statistics'].get('commentCount', 0))
@@ -516,14 +593,15 @@ def create_video_token():
         base_price = float(data['token_price'])
         dynamic_price = base_price + (engagement_score * 0.001)
         
-        # Generate creator account
-        private_key, creator_address = account.generate_account()
+        # Use the funded creator account
+        private_key = mnemonic.to_private_key(CREATOR_MNEMONIC)
+        creator_address = account.address_from_private_key(private_key)
         
         # Truncate asset name to fit Algorand's 32-character limit
         asset_name = data['token_name'][:32] if len(data['token_name']) > 32 else data['token_name']
         
         # Create ASA
-        asset_id = create_asa(
+        asset_id, txid, confirmed_round = create_asa(
             private_key=private_key,
             creator_address=creator_address,
             asset_name=asset_name,
@@ -537,7 +615,10 @@ def create_video_token():
             clawback_address=creator_address,
             url=f"https://www.youtube.com/watch?v={data['video_id']}",
             metadata_hash=None
-        )[0]  # Get just the asset ID
+        )
+        
+        # Tokens are automatically held by the creator account (reserve address)
+        print(f"✅ Creator automatically holds {data['total_supply']} video tokens (reserve address)")
         
         # Calculate market cap
         market_cap = float(data['total_supply']) * dynamic_price
@@ -553,7 +634,7 @@ def create_video_token():
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (asset_id, creator_address, data['token_name'], data['token_symbol'], 
               int(data['total_supply']), dynamic_price, market_cap,
-              channel_title, subscribers, data['video_id'], data['video_title']))
+              channel_title, subscribers, data['video_id'], video_title))
         
         conn.commit()
         conn.close()
@@ -592,32 +673,85 @@ def trade_token():
     try:
         data = request.get_json()
         
-        # Generate trader account (in production, this would be the user's wallet)
-        trader_private_key, trader_address = account.generate_account()
+        # Get trader address from request (user's wallet)
+        trader_address = data.get('trader_address')
+        if not trader_address:
+            return jsonify({
+                "success": False,
+                "error": "Trader address is required"
+            }), 400
         
-        # Create asset transfer transaction
+        # Get creator account for token management
+        creator_private_key = mnemonic.to_private_key(CREATOR_MNEMONIC)
+        creator_address = account.address_from_private_key(creator_private_key)
+        
+        # Convert amount to token units (assuming 6 decimals for the asset)
+        requested_amount = float(data['amount'])
+        token_amount = int(requested_amount * 1000000)  # 1 token = 1,000,000 micro-units
+        algo_amount = int(float(data['price']) * requested_amount * 1000000)  # ALGO amount in micro-units
+        
+        # Check if creator has enough tokens for the trade
+        try:
+            account_info = algod_client.account_info(creator_address)
+            assets = account_info.get('assets', [])
+            creator_token_balance = 0
+            
+            for asset in assets:
+                if asset['asset-id'] == int(data['asa_id']):
+                    creator_token_balance = asset['amount']
+                    break
+            
+            if data['trade_type'] == 'buy' and token_amount > creator_token_balance:
+                return jsonify({
+                    "success": False,
+                    "error": f"Insufficient token balance. Creator has {creator_token_balance/1000000:.6f} tokens, but you're trying to buy {requested_amount:.6f} tokens. Please try a smaller amount or check if this token has enough supply."
+                }), 400
+                
+        except Exception as e:
+            print(f"Warning: Could not check creator balance: {e}")
+        
+        # Get suggested parameters
         sp = algod_client.suggested_params()
         
         if data['trade_type'] == 'buy':
-            # For buying, we simulate receiving tokens
-            amount = int(float(data['amount']) * 1000000)  # Convert to micro-units
+            # For buying: Creator sends tokens to user (simplified demo)
+            # In a real system, user would pay ALGO, but for demo we'll simulate it
+            asset_txn = transaction.AssetTransferTxn(
+                sender=creator_address,
+                sp=sp,
+                receiver=trader_address,
+                amt=token_amount,
+                index=int(data['asa_id'])
+            )
+            
+            # Sign and send transaction
+            signed_asset = asset_txn.sign(creator_private_key)
+            asset_txid = algod_client.send_transaction(signed_asset)
+            print(f"📤 Asset transfer sent: {asset_txid}")
+            
+            # Wait for confirmation
+            asset_results = transaction.wait_for_confirmation(algod_client, asset_txid, 4)
+            txid = asset_txid
+            
         else:
-            # For selling, we simulate sending tokens
-            amount = int(float(data['amount']) * 1000000)
-        
-        txn = transaction.AssetTransferTxn(
-            sender=trader_address,
-            sp=sp,
-            receiver=trader_address,  # In real implementation, this would be different
-            amt=amount,
-            index=int(data['asa_id'])
-        )
-        
-        signed_txn = txn.sign(trader_private_key)
-        txid = algod_client.send_transaction(signed_txn)
-        
-        # Wait for confirmation
-        results = transaction.wait_for_confirmation(algod_client, txid, 4)
+            # For selling: Creator receives tokens from user (simplified demo)
+            # In a real system, creator would pay ALGO, but for demo we'll simulate it
+            asset_txn = transaction.AssetTransferTxn(
+                sender=trader_address,
+                sp=sp,
+                receiver=creator_address,
+                amt=token_amount,
+                index=int(data['asa_id'])
+            )
+            
+            # Sign and send transaction
+            signed_asset = asset_txn.sign(creator_private_key)  # Simplified: creator signs for user
+            asset_txid = algod_client.send_transaction(signed_asset)
+            print(f"📤 Asset transfer sent: {asset_txid}")
+            
+            # Wait for confirmation
+            asset_results = transaction.wait_for_confirmation(algod_client, asset_txid, 4)
+            txid = asset_txid
         
         # Store trade in database
         conn = sqlite3.connect('creatorvault.db')
@@ -632,6 +766,12 @@ def trade_token():
         conn.commit()
         conn.close()
         
+        # Get confirmation round from the asset transaction
+        if data['trade_type'] == 'buy':
+            confirmed_round = asset_results['confirmed-round']
+        else:
+            confirmed_round = asset_results['confirmed-round']
+        
         return jsonify({
             "success": True,
             "data": {
@@ -640,13 +780,133 @@ def trade_token():
                 "amount": float(data['amount']),
                 "price": float(data['price']),
                 "asa_id": int(data['asa_id']),
-                "confirmed_round": results['confirmed-round']
+                "confirmed_round": confirmed_round,
+                "algo_amount": algo_amount / 1000000,  # Convert back to ALGO
+                "token_amount": token_amount / 1000000  # Convert back to tokens
             }
         })
         
     except Exception as e:
         print(f"❌ Trade error: {e}")
         traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/user-balance/<address>', methods=['GET'])
+def get_user_balance(address):
+    """Get user's ALGO and token balances"""
+    try:
+        # Get account info
+        account_info = algod_client.account_info(address)
+        algo_balance = account_info.get('amount', 0) / 1000000  # Convert to ALGO
+        
+        # Get token balances
+        assets = account_info.get('assets', [])
+        token_balances = {}
+        
+        for asset in assets:
+            asset_id = asset['asset-id']
+            amount = asset['amount']
+            token_balances[asset_id] = {
+                'balance': amount,
+                'balance_tokens': amount / 1000000  # Convert to token units
+            }
+        
+        return jsonify({
+            "success": True,
+            "address": address,
+            "algo_balance": algo_balance,
+            "token_balances": token_balances
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/token-info/<int:asa_id>', methods=['GET'])
+def get_token_info(asa_id):
+    """Get comprehensive token information including max tradeable amount"""
+    try:
+        # Get creator account
+        private_key = mnemonic.to_private_key(CREATOR_MNEMONIC)
+        creator_address = account.address_from_private_key(private_key)
+        
+        # Get account info
+        account_info = algod_client.account_info(creator_address)
+        assets = account_info.get('assets', [])
+        
+        # Find the specific asset
+        token_balance = 0
+        for asset in assets:
+            if asset['asset-id'] == asa_id:
+                token_balance = asset['amount']
+                break
+        
+        # Get asset info for total supply
+        try:
+            asset_info = algod_client.asset_info(asa_id)
+            total_supply = asset_info['params']['total']
+            decimals = asset_info['params']['decimals']
+            unit_name = asset_info['params']['unit-name']
+            asset_name = asset_info['params']['name']
+        except:
+            total_supply = 0
+            decimals = 6
+            unit_name = "UNKNOWN"
+            asset_name = "Unknown Token"
+        
+            return jsonify({
+            "success": True,
+            "asa_id": asa_id,
+            "asset_name": asset_name,
+            "unit_name": unit_name,
+            "decimals": decimals,
+            "total_supply": total_supply,
+            "total_supply_tokens": total_supply / (10 ** decimals),
+            "creator_balance": token_balance,
+            "creator_balance_tokens": token_balance / (10 ** decimals),
+            "max_tradeable": token_balance / (10 ** decimals),
+            "creator_address": creator_address
+        })
+        
+    except Exception as e:
+                return jsonify({
+                    "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/token-balance/<int:asa_id>', methods=['GET'])
+def get_token_balance(asa_id):
+    """Get real-time token balance for a specific ASA"""
+    try:
+        # Get creator account
+        private_key = mnemonic.to_private_key(CREATOR_MNEMONIC)
+        creator_address = account.address_from_private_key(private_key)
+        
+        # Get account info
+        account_info = algod_client.account_info(creator_address)
+        assets = account_info.get('assets', [])
+        
+        # Find the specific asset
+        token_balance = 0
+        for asset in assets:
+            if asset['asset-id'] == asa_id:
+                token_balance = asset['amount']
+                break
+        
+        return jsonify({
+            "success": True,
+            "asa_id": asa_id,
+            "balance": token_balance,
+            "balance_tokens": token_balance / 1000000,  # Convert to token units
+            "creator_address": creator_address
+        })
+        
+    except Exception as e:
         return jsonify({
             "success": False,
             "error": str(e)

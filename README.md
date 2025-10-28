@@ -242,3 +242,4 @@ For support, email sarthaknimje@gmail.com or create an issue in the repository.
 ---
 
 **Built with ❤️ by Sarthak Nimje and Apurva Bardapurkar**
+

@@ -126,7 +126,8 @@ const Trading: React.FC = () => {
           asa_id: selectedToken.assetId,
           trade_type: orderType, // 'buy' or 'sell'
           amount: Math.floor(tradeAmount), // Convert to integer tokens
-          price: tradePrice
+          price: tradePrice,
+          trader_address: address // Add the user's wallet address
         })
       })
       

@@ -305,7 +305,8 @@ const TradingMarketplace: React.FC = () => {
           asa_id: tokenData.asa_id,
           trade_type: activeTab, // 'buy' or 'sell'
           amount: Math.floor(tradeAmount), // Convert to integer tokens
-          price: tradePrice
+          price: tradePrice,
+          trader_address: address // Add the user's wallet address
         })
       })
       

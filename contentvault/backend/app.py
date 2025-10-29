@@ -52,13 +52,34 @@ def handle_errors(f):
             return jsonify({"success": False, "error": str(e)}), 500
     return decorated_function
 
-# Configure CORS
-CORS(app, resources={r"/*": {"origins": "*", "methods": ["GET", "POST", "OPTIONS"], "allow_headers": ["Content-Type"], "supports_credentials": True}})
+# Configure CORS with environment-based origins
+allowed_origins = os.getenv('CORS_ORIGINS', 'http://localhost:5175').split(',')
+CORS(app, resources={
+    r"/*": {
+        "origins": allowed_origins if os.getenv('FLASK_ENV') == 'production' else "*",
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True,
+        "max_age": 3600
+    }
+})
 
-# Configure Flask session cookies for CORS compatibility
-app.config['SESSION_COOKIE_SAMESITE'] = 'None'
-app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
+# Configure Flask session cookies for security
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax' if os.getenv('FLASK_ENV') == 'production' else 'None'
+app.config['SESSION_COOKIE_SECURE'] = os.getenv('FLASK_ENV') == 'production'
 app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # 1 hour
+
+# Security headers middleware
+@app.after_request
+def add_security_headers(response):
+    """Add security headers to all responses"""
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    if os.getenv('FLASK_ENV') == 'production':
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    return response
 
 # Algorand configuration
 ALGOD_TOKEN = ""
@@ -76,6 +97,32 @@ youtube_sessions = {}
 
 # Initialize Algorand client
 algod_client = algod.AlgodClient(ALGOD_TOKEN, ALGOD_SERVER, ALGOD_PORT)
+
+# Input validation helpers
+def validate_algorand_address(address: str) -> bool:
+    """Validate Algorand address format"""
+    if not address or not isinstance(address, str):
+        return False
+    # Algorand addresses are 58 characters long
+    return len(address) == 58 and address.isalnum()
+
+def validate_token_params(token_name: str, token_symbol: str, total_supply: int) -> tuple[bool, str]:
+    """Validate token creation parameters"""
+    if not token_name or len(token_name) > 32:
+        return False, "Token name must be 1-32 characters"
+    if not token_symbol or len(token_symbol) > 8:
+        return False, "Token symbol must be 1-8 characters"
+    if not isinstance(total_supply, int) or total_supply <= 0 or total_supply > 18446744073709551615:
+        return False, "Invalid total supply"
+    return True, ""
+
+def sanitize_input(text: str, max_length: int = 256) -> str:
+    """Sanitize user input to prevent injection attacks"""
+    if not text:
+        return ""
+    # Remove any null bytes and limit length
+    sanitized = text.replace('\x00', '')[:max_length]
+    return sanitized.strip()
 
 # Creator account mnemonic (for demo purposes - in production, use proper key management)
 CREATOR_MNEMONIC = "alter green actual grab spoon okay faith repeat smile report easily retire plate enact vacuum spin bachelor rate where service settle nice north above soul"

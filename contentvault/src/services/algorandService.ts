@@ -1,11 +1,15 @@
 import { Algodv2, Transaction, makeAssetCreateTxnWithSuggestedParamsFromObject, waitForConfirmation } from 'algosdk'
 import { YouTubeVideo } from './youtubeApi'
 
+/**
+ * Algorand node configuration
+ * Using public Algonode testnet endpoint
+ */
 const ALGOD_TOKEN = ''
 const ALGOD_SERVER = 'https://testnet-api.algonode.cloud'
 const ALGOD_PORT = ''
 
-const algodClient = new Algodv2(ALGOD_TOKEN, ALGOD_SERVER, ALGOD_PORT)
+const algodClient: Algodv2 = new Algodv2(ALGOD_TOKEN, ALGOD_SERVER, ALGOD_PORT)
 
 export interface ASACreationParams {
   creator: string
@@ -49,9 +53,39 @@ export interface VideoTokenInfo {
   decimals: number
 }
 
+/**
+ * Asset balance information for a specific account
+ */
+export interface AssetBalance {
+  assetId: number
+  amount: number
+  name: string
+  unitName: string
+  decimals: number
+  totalSupply: number
+  creator: string
+  url: string
+}
+
+/**
+ * Algorand account asset holding
+ */
+export interface AccountAsset {
+  'asset-id': number
+  amount: number
+  'is-frozen'?: boolean
+}
+
+/**
+ * Service class for interacting with Algorand blockchain
+ * Handles ASA creation, asset management, and account queries
+ */
 export class AlgorandService {
   /**
    * Create a generic Algorand Standard Asset (for creator tokens)
+   * @param params - Asset creation parameters
+   * @returns Promise resolving to the created asset ID
+   * @throws Error if asset creation fails
    */
   async createAsset(params: {
     creator: string
@@ -98,6 +132,15 @@ export class AlgorandService {
     }
   }
 
+  /**
+   * Create an ASA for a YouTube video
+   * @param video - YouTube video data
+   * @param creatorAddress - Creator's Algorand address
+   * @param totalSupply - Total token supply (default: 1,000,000)
+   * @param decimals - Number of decimal places (default: 0)
+   * @returns Promise resolving to created ASA information
+   * @throws Error if ASA creation fails
+   */
   async createASAForVideo(
     video: YouTubeVideo,
     creatorAddress: string,
@@ -155,7 +198,13 @@ export class AlgorandService {
     }
   }
 
-  async getAssetInfo(assetId: number) {
+  /**
+   * Get detailed information about a specific asset
+   * @param assetId - The asset ID to query
+   * @returns Promise resolving to asset information
+   * @throws Error if asset query fails
+   */
+  async getAssetInfo(assetId: number): Promise<any> {
     try {
       const assetInfo = await algodClient.getAssetByID(assetId).do()
       return assetInfo
@@ -165,7 +214,13 @@ export class AlgorandService {
     }
   }
 
-  async getAccountAssets(accountAddress: string) {
+  /**
+   * Get all assets held by an account
+   * @param accountAddress - The account address to query
+   * @returns Promise resolving to array of account assets
+   * @throws Error if account query fails
+   */
+  async getAccountAssets(accountAddress: string): Promise<AccountAsset[]> {
     try {
       const accountInfo = await algodClient.accountInformation(accountAddress).do()
       return accountInfo.assets || []
@@ -175,7 +230,13 @@ export class AlgorandService {
     }
   }
 
-  async getAssetBalances(accountAddress: string) {
+  /**
+   * Get detailed balance information for all assets held by an account
+   * @param accountAddress - The account address to query
+   * @returns Promise resolving to array of asset balances with full details
+   * @throws Error if balance query fails
+   */
+  async getAssetBalances(accountAddress: string): Promise<AssetBalance[]> {
     try {
       const accountInfo = await algodClient.accountInformation(accountAddress).do()
       const assets = accountInfo.assets || []

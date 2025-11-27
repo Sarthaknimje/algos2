@@ -173,13 +173,15 @@ class WebScraper:
                                     logger.info(f"Found likes from embed: {likes:,}")
                                     break
                         
-                        # Try to find comments - multiple patterns
+                        # Try to find comments - multiple patterns (including escaped quotes)
                         comments_patterns = [
-                            r'"edge_media_to_comment":\s*{\s*"count":\s*(\d+)',
-                            r'"edge_media_to_parent_comment":\s*{\s*"count":\s*(\d+)',
-                            r'"edge_media_preview_comment":\s*{\s*"count":\s*(\d+)',
-                            r'"comment_count":\s*(\d+)',
-                            r'"comments":\s*{\s*"count":\s*(\d+)',
+                            r'"comments_count\\"?:\s*(\d+)',  # "comments_count\":2596 or "comments_count":2596
+                            r'"comment_count\\"?:\s*(\d+)',   # "comment_count\":123
+                            r'"edge_media_to_comment":\s*\{\s*"count":\s*(\d+)',
+                            r'"edge_media_to_parent_comment":\s*\{\s*"count":\s*(\d+)',
+                            r'"edge_media_preview_comment":\s*\{\s*"count":\s*(\d+)',
+                            r'"comments":\s*\{\s*"count":\s*(\d+)',
+                            r'comments_count["\s:]+(\d+)',  # looser pattern
                             r'(\d{1,3}(?:,\d{3})*)\s*comments?',  # 1,234 comments
                         ]
                         for pattern in comments_patterns:
@@ -361,15 +363,17 @@ class WebScraper:
                                 logger.info(f"Found likes from JSON: {likes:,}")
                                 break
                     
-                    # COMMENTS - Look for comment count in JSON
+                    # COMMENTS - Look for comment count in JSON (including escaped quotes)
                     if comments == 0:
                         for pattern in [
-                            r'"edge_media_to_comment":\s*{\s*"count":\s*(\d+)',
-                            r'"edge_media_to_parent_comment":\s*{\s*"count":\s*(\d+)',
+                            r'"comments_count\\"?:\s*(\d+)',  # "comments_count\":2596
+                            r'"comment_count\\"?:\s*(\d+)',   # "comment_count":123
+                            r'"edge_media_to_comment":\s*\{\s*"count":\s*(\d+)',
+                            r'"edge_media_to_parent_comment":\s*\{\s*"count":\s*(\d+)',
                             r'"commentCount":\s*(\d+)',
-                            r'"comment_count":\s*(\d+)',
-                            r'"comments":\s*{\s*"count":\s*(\d+)',
+                            r'"comments":\s*\{\s*"count":\s*(\d+)',
                             r'edge_media_preview_comment.*?"count":\s*(\d+)',
+                            r'comments_count["\s:\\]+(\d+)',  # looser pattern
                         ]:
                             match = re.search(pattern, page_text)
                             if match:

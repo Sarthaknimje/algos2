@@ -344,7 +344,7 @@ class WebScraper:
     def scrape_twitter_tweet(tweet_url: str) -> Optional[Dict]:
         """
         Scrape Twitter/X Tweet data from URL
-        Extracts likes, retweets, replies from meta tags
+        Uses Twitter's syndication API for engagement data
         """
         try:
             # Twitter URL format: https://twitter.com/username/status/1234567890 or x.com
@@ -364,122 +364,124 @@ class WebScraper:
             views = 0
             tweet_text = ''
             thumbnail_url = ''
+            author_name = username
             
-            # Try multiple user agents
-            headers_list = [
-                {
-                    'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
-                    'Accept': '*/*',
-                },
-                {
-                    'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
-                    'Accept': 'text/html',
-                },
-                WebScraper.get_headers()
-            ]
+            # METHOD 1: Try Twitter's Syndication API (returns JSON with engagement!)
+            try:
+                syndication_url = f'https://cdn.syndication.twimg.com/tweet-result?id={tweet_id}&lang=en'
+                synd_response = requests.get(syndication_url, timeout=10, headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Accept': 'application/json',
+                    'Referer': 'https://platform.twitter.com/'
+                })
+                
+                if synd_response.status_code == 200:
+                    try:
+                        tweet_data = synd_response.json()
+                        
+                        # Extract engagement from JSON
+                        likes = tweet_data.get('favorite_count', 0) or 0
+                        retweets = tweet_data.get('retweet_count', 0) or 0
+                        replies = tweet_data.get('reply_count', 0) or tweet_data.get('conversation_count', 0) or 0
+                        views = tweet_data.get('views', {}).get('count', 0) if isinstance(tweet_data.get('views'), dict) else 0
+                        
+                        # Get tweet text
+                        tweet_text = tweet_data.get('text', '')
+                        
+                        # Get author info
+                        user_data = tweet_data.get('user', {})
+                        author_name = user_data.get('screen_name', username) or username
+                        
+                        # Get media/thumbnail
+                        media_list = tweet_data.get('mediaDetails', []) or tweet_data.get('entities', {}).get('media', [])
+                        if media_list and len(media_list) > 0:
+                            thumbnail_url = media_list[0].get('media_url_https', '') or media_list[0].get('media_url', '')
+                        
+                        # If no media, try user profile pic
+                        if not thumbnail_url:
+                            thumbnail_url = user_data.get('profile_image_url_https', '')
+                        
+                        logger.info(f"Twitter syndication API: {likes:,} likes, {retweets:,} retweets, {replies:,} replies")
+                    except json.JSONDecodeError:
+                        logger.warning("Twitter syndication returned non-JSON")
+            except Exception as e:
+                logger.warning(f"Twitter syndication API failed: {e}")
             
-            for headers in headers_list:
-                try:
-                    response = requests.get(tweet_url, headers=headers, timeout=15)
-                    if response.status_code == 200:
-                        soup = BeautifulSoup(response.text, 'html.parser')
-                        
-                        # Extract from meta tags
-                        og_title = soup.find('meta', property='og:title')
-                        og_desc = soup.find('meta', property='og:description')
-                        og_image = soup.find('meta', property='og:image')
-                        
-                        if not og_image:
-                            og_image = soup.find('meta', attrs={'name': 'twitter:image'})
-                        
-                        title_text = og_title.get('content', '') if og_title else ''
-                        desc_text = og_desc.get('content', '') if og_desc else ''
-                        thumbnail_url = og_image.get('content', '') if og_image else ''
-                        
-                        # Combine title and description for parsing
-                        all_text = f"{title_text} {desc_text}"
-                        
-                        # Get tweet text (clean it)
-                        tweet_text = desc_text or title_text
-                        if tweet_text:
-                            tweet_text = re.sub(r'^.*? on (Twitter|X):\s*["\']?', '', tweet_text, flags=re.IGNORECASE)
-                            tweet_text = tweet_text.strip('"\'')
-                        
-                        # Parse engagement from meta tags
-                        # Format: "1.2K likes, 234 replies, 56 reposts"
-                        
-                        # Likes
-                        abbrev_likes = re.search(r'([\d.]+)\s*([KMB])\s*likes?', all_text, re.IGNORECASE)
-                        if abbrev_likes:
-                            num = float(abbrev_likes.group(1))
-                            suffix = abbrev_likes.group(2).upper()
-                            multiplier = {'K': 1000, 'M': 1000000, 'B': 1000000000}.get(suffix, 1)
-                            likes = int(num * multiplier)
-                        else:
-                            exact_likes = re.search(r'([\d,]+)\s*likes?', all_text, re.IGNORECASE)
-                            if exact_likes:
-                                likes_str = exact_likes.group(1).replace(',', '')
-                                if likes_str.isdigit():
-                                    likes = int(likes_str)
-                        
-                        # Replies/Comments
-                        abbrev_replies = re.search(r'([\d.]+)\s*([KMB])\s*(?:replies|comments)', all_text, re.IGNORECASE)
-                        if abbrev_replies:
-                            num = float(abbrev_replies.group(1))
-                            suffix = abbrev_replies.group(2).upper()
-                            multiplier = {'K': 1000, 'M': 1000000, 'B': 1000000000}.get(suffix, 1)
-                            replies = int(num * multiplier)
-                        else:
-                            exact_replies = re.search(r'([\d,]+)\s*(?:replies|comments)', all_text, re.IGNORECASE)
-                            if exact_replies:
-                                replies_str = exact_replies.group(1).replace(',', '')
-                                if replies_str.isdigit():
-                                    replies = int(replies_str)
-                        
-                        # Retweets/Reposts
-                        abbrev_retweets = re.search(r'([\d.]+)\s*([KMB])\s*(?:retweets?|reposts?)', all_text, re.IGNORECASE)
-                        if abbrev_retweets:
-                            num = float(abbrev_retweets.group(1))
-                            suffix = abbrev_retweets.group(2).upper()
-                            multiplier = {'K': 1000, 'M': 1000000, 'B': 1000000000}.get(suffix, 1)
-                            retweets = int(num * multiplier)
-                        else:
-                            exact_retweets = re.search(r'([\d,]+)\s*(?:retweets?|reposts?)', all_text, re.IGNORECASE)
-                            if exact_retweets:
-                                retweets_str = exact_retweets.group(1).replace(',', '')
-                                if retweets_str.isdigit():
-                                    retweets = int(retweets_str)
-                        
-                        # Views
-                        abbrev_views = re.search(r'([\d.]+)\s*([KMB])\s*views?', all_text, re.IGNORECASE)
-                        if abbrev_views:
-                            num = float(abbrev_views.group(1))
-                            suffix = abbrev_views.group(2).upper()
-                            multiplier = {'K': 1000, 'M': 1000000, 'B': 1000000000}.get(suffix, 1)
-                            views = int(num * multiplier)
-                        else:
-                            exact_views = re.search(r'([\d,]+)\s*views?', all_text, re.IGNORECASE)
-                            if exact_views:
-                                views_str = exact_views.group(1).replace(',', '')
-                                if views_str.isdigit():
-                                    views = int(views_str)
-                        
-                        if likes > 0 or replies > 0 or thumbnail_url:
-                            break  # Got good data
-                except Exception as e:
-                    logger.warning(f"Twitter scrape attempt failed: {e}")
-                    continue
+            # METHOD 2: Fallback to page scraping if syndication failed
+            if likes == 0 and retweets == 0:
+                headers_list = [
+                    {
+                        'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+                        'Accept': '*/*',
+                    },
+                    {
+                        'User-Agent': 'Twitterbot/1.0',
+                        'Accept': 'text/html',
+                    },
+                    WebScraper.get_headers()
+                ]
+                
+                for headers in headers_list:
+                    try:
+                        response = requests.get(tweet_url, headers=headers, timeout=15)
+                        if response.status_code == 200:
+                            soup = BeautifulSoup(response.text, 'html.parser')
+                            
+                            # Extract from meta tags
+                            og_title = soup.find('meta', property='og:title')
+                            og_desc = soup.find('meta', property='og:description')
+                            og_image = soup.find('meta', property='og:image')
+                            
+                            if not og_image:
+                                og_image = soup.find('meta', attrs={'name': 'twitter:image'})
+                            
+                            title_text = og_title.get('content', '') if og_title else ''
+                            desc_text = og_desc.get('content', '') if og_desc else ''
+                            
+                            if not thumbnail_url:
+                                thumbnail_url = og_image.get('content', '') if og_image else ''
+                            
+                            # Get tweet text from meta
+                            if not tweet_text:
+                                tweet_text = desc_text or title_text
+                                if tweet_text:
+                                    tweet_text = re.sub(r'^.*? on (Twitter|X):\s*["\']?', '', tweet_text, flags=re.IGNORECASE)
+                                    tweet_text = tweet_text.strip('"\'')
+                            
+                            # Combine title and description for parsing engagement
+                            all_text = f"{title_text} {desc_text}"
+                            
+                            # Parse engagement from meta tags (fallback)
+                            if likes == 0:
+                                abbrev_likes = re.search(r'([\d.]+)\s*([KMB])\s*likes?', all_text, re.IGNORECASE)
+                                if abbrev_likes:
+                                    num = float(abbrev_likes.group(1))
+                                    suffix = abbrev_likes.group(2).upper()
+                                    multiplier = {'K': 1000, 'M': 1000000, 'B': 1000000000}.get(suffix, 1)
+                                    likes = int(num * multiplier)
+                                else:
+                                    exact_likes = re.search(r'([\d,]+)\s*likes?', all_text, re.IGNORECASE)
+                                    if exact_likes:
+                                        likes_str = exact_likes.group(1).replace(',', '')
+                                        if likes_str.isdigit():
+                                            likes = int(likes_str)
+                            
+                            if likes > 0 or thumbnail_url:
+                                break
+                    except Exception as e:
+                        logger.warning(f"Twitter page scrape failed: {e}")
+                        continue
             
-            logger.info(f"Twitter scrape: @{username} - {likes:,} likes, {replies:,} replies, {retweets:,} retweets")
+            logger.info(f"Twitter scrape: @{author_name} - {likes:,} likes, {replies:,} replies, {retweets:,} retweets")
             
             return {
                 'id': tweet_id,
-                'title': tweet_text[:100] or f'Tweet by @{username}',
+                'title': tweet_text[:100] if tweet_text else f'Tweet by @{author_name}',
                 'description': tweet_text,
                 'thumbnailUrl': thumbnail_url,
                 'url': tweet_url,
                 'platform': 'twitter',
-                'authorName': username,
+                'authorName': author_name,
                 'createdAt': '',
                 'engagement': {
                     'likes': likes,

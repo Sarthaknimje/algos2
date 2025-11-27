@@ -198,6 +198,36 @@ const Dashboard: React.FC = () => {
     .sort((a, b) => (b.volume_24h || 0) - (a.volume_24h || 0))
     .slice(0, 5)
 
+  // Platform statistics
+  const platformStats = {
+    youtube: {
+      count: tokens.filter(t => (t.platform?.toLowerCase() || 'youtube') === 'youtube').length,
+      marketCap: tokens.filter(t => (t.platform?.toLowerCase() || 'youtube') === 'youtube').reduce((sum, t) => sum + (t.market_cap || 0), 0),
+      volume: tokens.filter(t => (t.platform?.toLowerCase() || 'youtube') === 'youtube').reduce((sum, t) => sum + (t.volume_24h || 0), 0),
+    },
+    instagram: {
+      count: tokens.filter(t => t.platform?.toLowerCase() === 'instagram').length,
+      marketCap: tokens.filter(t => t.platform?.toLowerCase() === 'instagram').reduce((sum, t) => sum + (t.market_cap || 0), 0),
+      volume: tokens.filter(t => t.platform?.toLowerCase() === 'instagram').reduce((sum, t) => sum + (t.volume_24h || 0), 0),
+    },
+    twitter: {
+      count: tokens.filter(t => t.platform?.toLowerCase() === 'twitter').length,
+      marketCap: tokens.filter(t => t.platform?.toLowerCase() === 'twitter').reduce((sum, t) => sum + (t.market_cap || 0), 0),
+      volume: tokens.filter(t => t.platform?.toLowerCase() === 'twitter').reduce((sum, t) => sum + (t.volume_24h || 0), 0),
+    },
+    linkedin: {
+      count: tokens.filter(t => t.platform?.toLowerCase() === 'linkedin').length,
+      marketCap: tokens.filter(t => t.platform?.toLowerCase() === 'linkedin').reduce((sum, t) => sum + (t.market_cap || 0), 0),
+      volume: tokens.filter(t => t.platform?.toLowerCase() === 'linkedin').reduce((sum, t) => sum + (t.volume_24h || 0), 0),
+    },
+  }
+
+  const formatCurrency = (num: number) => {
+    if (num >= 1000000) return '$' + (num / 1000000).toFixed(2) + 'M'
+    if (num >= 1000) return '$' + (num / 1000).toFixed(2) + 'K'
+    return '$' + num.toFixed(2)
+  }
+
   return (
     <div className="min-h-screen bg-[#0a0a0f] py-8 relative overflow-hidden">
       <PremiumBackground variant="purple" />
@@ -313,6 +343,106 @@ const Dashboard: React.FC = () => {
               </motion.div>
             </div>
           )}
+        </motion.div>
+
+        {/* Platform Stats */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8"
+        >
+          {/* YouTube Stats */}
+          <div className="card bg-gradient-to-br from-red-500/10 to-red-600/5 border-red-500/20 hover:border-red-500/40 transition-all">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 bg-red-500/20 rounded-lg flex items-center justify-center">
+                <YouTubeIcon className="w-5 h-5 text-red-400" />
+              </div>
+              <div>
+                <p className="text-white font-semibold">YouTube</p>
+                <p className="text-xs text-gray-400">{platformStats.youtube.count} tokens</p>
+              </div>
+            </div>
+            <div className="space-y-1 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-400">Market Cap</span>
+                <span className="text-white font-medium">{formatCurrency(platformStats.youtube.marketCap)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">24h Volume</span>
+                <span className="text-red-400 font-medium">{formatCurrency(platformStats.youtube.volume)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Instagram Stats */}
+          <div className="card bg-gradient-to-br from-pink-500/10 to-purple-600/5 border-pink-500/20 hover:border-pink-500/40 transition-all">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 bg-pink-500/20 rounded-lg flex items-center justify-center">
+                <InstagramIcon className="w-5 h-5 text-pink-400" />
+              </div>
+              <div>
+                <p className="text-white font-semibold">Instagram</p>
+                <p className="text-xs text-gray-400">{platformStats.instagram.count} tokens</p>
+              </div>
+            </div>
+            <div className="space-y-1 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-400">Market Cap</span>
+                <span className="text-white font-medium">{formatCurrency(platformStats.instagram.marketCap)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">24h Volume</span>
+                <span className="text-pink-400 font-medium">{formatCurrency(platformStats.instagram.volume)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Twitter Stats */}
+          <div className="card bg-gradient-to-br from-blue-500/10 to-cyan-600/5 border-blue-500/20 hover:border-blue-500/40 transition-all">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center">
+                <TwitterIcon className="w-5 h-5 text-blue-400" />
+              </div>
+              <div>
+                <p className="text-white font-semibold">Twitter/X</p>
+                <p className="text-xs text-gray-400">{platformStats.twitter.count} tokens</p>
+              </div>
+            </div>
+            <div className="space-y-1 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-400">Market Cap</span>
+                <span className="text-white font-medium">{formatCurrency(platformStats.twitter.marketCap)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">24h Volume</span>
+                <span className="text-blue-400 font-medium">{formatCurrency(platformStats.twitter.volume)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* LinkedIn Stats */}
+          <div className="card bg-gradient-to-br from-sky-500/10 to-blue-600/5 border-sky-500/20 hover:border-sky-500/40 transition-all">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 bg-sky-500/20 rounded-lg flex items-center justify-center">
+                <LinkedInIcon className="w-5 h-5 text-sky-400" />
+              </div>
+              <div>
+                <p className="text-white font-semibold">LinkedIn</p>
+                <p className="text-xs text-gray-400">{platformStats.linkedin.count} tokens</p>
+              </div>
+            </div>
+            <div className="space-y-1 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-400">Market Cap</span>
+                <span className="text-white font-medium">{formatCurrency(platformStats.linkedin.marketCap)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">24h Volume</span>
+                <span className="text-sky-400 font-medium">{formatCurrency(platformStats.linkedin.volume)}</span>
+              </div>
+            </div>
+          </div>
         </motion.div>
 
         {/* Tabs */}

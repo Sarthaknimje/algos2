@@ -57,6 +57,7 @@ const CreatorMarketplace: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<'market_cap' | 'price_change' | 'holders' | 'created_at'>('market_cap')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
+  const [platformFilter, setPlatformFilter] = useState<'all' | 'youtube' | 'instagram' | 'twitter' | 'linkedin'>('all')
   const [error, setError] = useState<string | null>(null)
   const [retryCount, setRetryCount] = useState(0)
 
@@ -125,12 +126,21 @@ const CreatorMarketplace: React.FC = () => {
   const filterAndSortTokens = useCallback(() => {
     let filtered = [...tokens]
 
+    // Filter by platform
+    if (platformFilter !== 'all') {
+      filtered = filtered.filter(token => {
+        const tokenPlatform = token.platform?.toLowerCase() || 'youtube'
+        return tokenPlatform === platformFilter
+      })
+    }
+
     // Filter by search query
     if (searchQuery) {
       filtered = filtered.filter(token => 
         token.token_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         token.token_symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        token.youtube_channel_title.toLowerCase().includes(searchQuery.toLowerCase())
+        token.youtube_channel_title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        token.content_description?.toLowerCase().includes(searchQuery.toLowerCase())
       )
     }
 
@@ -165,7 +175,16 @@ const CreatorMarketplace: React.FC = () => {
   })
 
     setFilteredTokens(filtered)
-  }, [tokens, searchQuery, sortBy, sortOrder])
+  }, [tokens, searchQuery, sortBy, sortOrder, platformFilter])
+
+  // Get platform counts
+  const platformCounts = {
+    all: tokens.length,
+    youtube: tokens.filter(t => (t.platform?.toLowerCase() || 'youtube') === 'youtube').length,
+    instagram: tokens.filter(t => t.platform?.toLowerCase() === 'instagram').length,
+    twitter: tokens.filter(t => t.platform?.toLowerCase() === 'twitter').length,
+    linkedin: tokens.filter(t => t.platform?.toLowerCase() === 'linkedin').length,
+  }
 
   useEffect(() => {
     filterAndSortTokens()
@@ -251,7 +270,7 @@ const CreatorMarketplace: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] py-12 relative">
-      <PremiumBackground variant="orange" />
+      <PremiumBackground variant="purple" />
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <motion.div
@@ -261,14 +280,50 @@ const CreatorMarketplace: React.FC = () => {
         >
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 backdrop-blur-sm mb-6">
             <Sparkles className="w-4 h-4 text-violet-400" />
-            <span className="text-sm text-gray-300">Creator Token Marketplace</span>
+            <span className="text-sm text-gray-300">Multi-Platform Token Marketplace</span>
           </div>
           <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">
             Creator <span className="bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">Marketplace</span>
           </h1>
           <p className="text-gray-400 text-xl max-w-2xl mx-auto">
-            Discover and trade tokens from verified YouTube creators. All tokens are backed by real creator channels.
+            Discover and trade tokens from YouTube, Instagram, Twitter/X, and LinkedIn creators. All tokens are backed by real verified content.
           </p>
+        </motion.div>
+
+        {/* Platform Filter Tabs */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+          className="flex flex-wrap justify-center gap-3 mb-8"
+        >
+          {[
+            { id: 'all', label: 'All Platforms', icon: <Sparkles className="w-4 h-4" />, color: 'violet' },
+            { id: 'youtube', label: 'YouTube', icon: <YouTubeIcon className="w-4 h-4" />, color: 'red' },
+            { id: 'instagram', label: 'Instagram', icon: <InstagramIcon className="w-4 h-4" />, color: 'pink' },
+            { id: 'twitter', label: 'Twitter/X', icon: <TwitterIcon className="w-4 h-4" />, color: 'blue' },
+            { id: 'linkedin', label: 'LinkedIn', icon: <LinkedInIcon className="w-4 h-4" />, color: 'sky' },
+          ].map((platform) => (
+            <motion.button
+              key={platform.id}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setPlatformFilter(platform.id as any)}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-all ${
+                platformFilter === platform.id
+                  ? `bg-gradient-to-r from-${platform.color}-500 to-${platform.color}-600 text-white shadow-lg shadow-${platform.color}-500/25`
+                  : 'bg-white/5 text-gray-300 hover:bg-white/10 border border-white/10'
+              }`}
+            >
+              {platform.icon}
+              <span>{platform.label}</span>
+              <span className={`px-2 py-0.5 rounded-full text-xs ${
+                platformFilter === platform.id ? 'bg-white/20' : 'bg-white/10'
+              }`}>
+                {platformCounts[platform.id as keyof typeof platformCounts]}
+              </span>
+            </motion.button>
+          ))}
         </motion.div>
 
         {/* Stats */}
@@ -533,17 +588,35 @@ const CreatorMarketplace: React.FC = () => {
             transition={{ delay: 0.5 }}
             className="text-center mt-12"
           >
-            <div className="card bg-gradient-to-r from-purple-500/10 to-pink-500/10 border-purple-500/30">
-              <h3 className="text-2xl font-bold text-white mb-4">Ready to Launch Your Token?</h3>
+            <div className="card bg-gradient-to-r from-violet-500/10 to-fuchsia-500/10 border-violet-500/30">
+              <h3 className="text-2xl font-bold text-white mb-4">Ready to Tokenize Your Content?</h3>
               <p className="text-gray-400 mb-6">
-                Connect your YouTube channel and create your own creator token
+                Create tokens from your YouTube videos, Instagram Reels, Twitter posts, or LinkedIn content
               </p>
+              <div className="flex flex-wrap justify-center gap-3 mb-6">
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-red-500/20 rounded-lg">
+                  <YouTubeIcon className="w-4 h-4 text-red-400" />
+                  <span className="text-red-300 text-sm">YouTube</span>
+                </div>
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-pink-500/20 rounded-lg">
+                  <InstagramIcon className="w-4 h-4 text-pink-400" />
+                  <span className="text-pink-300 text-sm">Instagram</span>
+                </div>
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/20 rounded-lg">
+                  <TwitterIcon className="w-4 h-4 text-blue-400" />
+                  <span className="text-blue-300 text-sm">Twitter/X</span>
+                </div>
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-sky-500/20 rounded-lg">
+                  <LinkedInIcon className="w-4 h-4 text-sky-400" />
+                  <span className="text-sky-300 text-sm">LinkedIn</span>
+                </div>
+              </div>
               <Link
-                to="/launchpad"
+                to="/tokenize"
                 className="btn-primary inline-flex items-center space-x-2"
               >
                 <Star className="w-5 h-5" />
-                <span>Launch Your Token</span>
+                <span>Tokenize Your Content</span>
               </Link>
             </div>
           </motion.div>

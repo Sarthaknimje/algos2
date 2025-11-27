@@ -314,19 +314,42 @@ class WebScraper:
                     # Look for JSON data in script tags (fallback)
                     page_text = response.text
                     
-                    # More patterns for engagement from JSON
+                    # More patterns for engagement from JSON - Instagram often includes this in shared_data
                     if likes == 0:
-                        for pattern in [r'"edge_liked_by":\s*{\s*"count":\s*(\d+)', r'"likeCount":\s*(\d+)']:
+                        for pattern in [
+                            r'"edge_liked_by":\s*{\s*"count":\s*(\d+)', 
+                            r'"likeCount":\s*(\d+)',
+                            r'"like_count":\s*(\d+)',
+                            r'edge_media_preview_like.*?"count":\s*(\d+)',
+                        ]:
                             match = re.search(pattern, page_text)
                             if match:
                                 likes = int(match.group(1))
+                                logger.info(f"Found likes from JSON: {likes:,}")
+                                break
+                    
+                    # COMMENTS - Look for comment count in JSON
+                    if comments == 0:
+                        for pattern in [
+                            r'"edge_media_to_comment":\s*{\s*"count":\s*(\d+)',
+                            r'"edge_media_to_parent_comment":\s*{\s*"count":\s*(\d+)',
+                            r'"commentCount":\s*(\d+)',
+                            r'"comment_count":\s*(\d+)',
+                            r'"comments":\s*{\s*"count":\s*(\d+)',
+                            r'edge_media_preview_comment.*?"count":\s*(\d+)',
+                        ]:
+                            match = re.search(pattern, page_text)
+                            if match:
+                                comments = int(match.group(1))
+                                logger.info(f"Found comments from JSON: {comments:,}")
                                 break
                     
                     if views == 0:
-                        for pattern in [r'"viewCount":\s*"?(\d+)"?', r'"video_view_count":\s*(\d+)']:
+                        for pattern in [r'"viewCount":\s*"?(\d+)"?', r'"video_view_count":\s*(\d+)', r'"play_count":\s*(\d+)']:
                             match = re.search(pattern, page_text)
                             if match:
                                 views = int(match.group(1))
+                                logger.info(f"Found views from JSON: {views:,}")
                                 break
             except Exception as e:
                 logger.warning(f"Direct scraping failed: {e}")

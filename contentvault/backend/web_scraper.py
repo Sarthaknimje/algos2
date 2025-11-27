@@ -555,31 +555,33 @@ class WebScraper:
                         all_text = f"{title_text} {desc_text}"
                         
                         # Log for debugging
-                        logger.info(f"LinkedIn meta text: {all_text[:200]}...")
+                        logger.info(f"LinkedIn meta text: {all_text[:300]}...")
                         
-                        # Get post text (clean version)
+                        # Get post text (clean version) - remove "| X comments on LinkedIn" suffix
                         post_text = desc_text or title_text
+                        post_text = re.sub(r'\s*\|\s*\d+\s*comments?\s+on\s+LinkedIn\s*$', '', post_text, flags=re.IGNORECASE)
                         
                         # Parse engagement from meta tags
-                        # LinkedIn formats:
-                        # - "45 reactions · 30 comments"
-                        # - "1.2K reactions"
-                        # - "123 likes"
-                        # - "45 reactions, 30 comments, 12 reposts"
+                        # LinkedIn meta description format: "Post text... | 30 comments on LinkedIn"
+                        # NOTE: LinkedIn does NOT include reactions/likes in meta tags
+                        # Reactions are only visible in JavaScript-rendered content
                         
-                        # Reactions/Likes - Try multiple patterns
-                        # Pattern 1: "45 reactions" or "1.2K reactions"
+                        # Try to find reactions in rendered HTML (may not work without JS)
+                        page_text = response.text
+                        
+                        # Look for reactions in the HTML (LinkedIn shows them as plain numbers)
+                        # Pattern: look for standalone numbers near "reactions" or "likes"
                         reaction_patterns = [
-                            r'([\d,.]+)\s*([KMB])?\s*reactions?',  # 45 reactions, 1.2K reactions
-                            r'([\d,.]+)\s*([KMB])?\s*likes?',       # 45 likes
-                            r'([\d,.]+)\s*([KMB])?\s*(?:people|others)\s+(?:like|react)',  # 45 people like
+                            r'>\s*([\d,]+)\s*<[^>]*>\s*(?:reactions?|likes?)',  # >317< reactions
+                            r'([\d,]+)\s*(?:reactions?|likes?)',  # 317 reactions
+                            r'([\d,.]+)\s*([KMB])\s*(?:reactions?|likes?)',  # 1.2K reactions
                         ]
                         
                         for pattern in reaction_patterns:
-                            match = re.search(pattern, all_text, re.IGNORECASE)
+                            match = re.search(pattern, page_text, re.IGNORECASE)
                             if match:
                                 num_str = match.group(1).replace(',', '')
-                                suffix = match.group(2).upper() if match.group(2) else ''
+                                suffix = match.group(2).upper() if len(match.groups()) > 1 and match.group(2) else ''
                                 if num_str.replace('.', '').isdigit():
                                     num = float(num_str)
                                     if suffix:
@@ -587,20 +589,22 @@ class WebScraper:
                                         likes = int(num * multiplier)
                                     else:
                                         likes = int(num)
-                                    logger.info(f"LinkedIn found reactions: {match.group(0)} -> {likes:,}")
-                                    break
+                                    if likes > 0:
+                                        logger.info(f"LinkedIn found reactions: {match.group(0)} -> {likes:,}")
+                                        break
                         
-                        # Comments - Try multiple patterns
+                        # Comments - LinkedIn format: "| 30 comments on LinkedIn"
                         comment_patterns = [
-                            r'([\d,.]+)\s*([KMB])?\s*comments?',
-                            r'([\d,.]+)\s*([KMB])?\s*(?:replies|reply)',
+                            r'\|\s*([\d,]+)\s*comments?\s+on\s+LinkedIn',  # | 30 comments on LinkedIn
+                            r'([\d,]+)\s*([KMB])?\s*comments?',  # 30 comments
+                            r'>\s*([\d,]+)\s*<[^>]*>\s*[Cc]omments?',  # >30< Comments
                         ]
                         
                         for pattern in comment_patterns:
-                            match = re.search(pattern, all_text, re.IGNORECASE)
+                            match = re.search(pattern, all_text + ' ' + page_text, re.IGNORECASE)
                             if match:
                                 num_str = match.group(1).replace(',', '')
-                                suffix = match.group(2).upper() if match.group(2) else ''
+                                suffix = match.group(2).upper() if len(match.groups()) > 1 and match.group(2) else ''
                                 if num_str.replace('.', '').isdigit():
                                     num = float(num_str)
                                     if suffix:
@@ -608,20 +612,22 @@ class WebScraper:
                                         comments = int(num * multiplier)
                                     else:
                                         comments = int(num)
-                                    logger.info(f"LinkedIn found comments: {match.group(0)} -> {comments:,}")
-                                    break
+                                    if comments > 0:
+                                        logger.info(f"LinkedIn found comments: {match.group(0).strip()} -> {comments:,}")
+                                        break
                         
                         # Reposts/Shares
                         share_patterns = [
-                            r'([\d,.]+)\s*([KMB])?\s*reposts?',
-                            r'([\d,.]+)\s*([KMB])?\s*shares?',
+                            r'([\d,]+)\s*([KMB])?\s*reposts?',
+                            r'([\d,]+)\s*([KMB])?\s*shares?',
+                            r'>\s*([\d,]+)\s*<[^>]*>\s*(?:reposts?|shares?)',
                         ]
                         
                         for pattern in share_patterns:
-                            match = re.search(pattern, all_text, re.IGNORECASE)
+                            match = re.search(pattern, page_text, re.IGNORECASE)
                             if match:
                                 num_str = match.group(1).replace(',', '')
-                                suffix = match.group(2).upper() if match.group(2) else ''
+                                suffix = match.group(2).upper() if len(match.groups()) > 1 and match.group(2) else ''
                                 if num_str.replace('.', '').isdigit():
                                     num = float(num_str)
                                     if suffix:
@@ -629,8 +635,9 @@ class WebScraper:
                                         shares = int(num * multiplier)
                                     else:
                                         shares = int(num)
-                                    logger.info(f"LinkedIn found shares: {match.group(0)} -> {shares:,}")
-                                    break
+                                    if shares > 0:
+                                        logger.info(f"LinkedIn found shares: {match.group(0)} -> {shares:,}")
+                                        break
                         
                         if likes > 0 or comments > 0 or thumbnail_url:
                             break  # Got good data

@@ -126,79 +126,112 @@ class WebScraper:
                 logger.warning(f"oEmbed failed: {e}")
             
             # METHOD 2: Try the embed page which sometimes has more data
-            try:
-                embed_url = f'https://www.instagram.com/p/{reel_id}/embed/'
-                embed_response = requests.get(embed_url, timeout=10, headers={
+            embed_headers_list = [
+                {
                     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                })
-                if embed_response.status_code == 200:
-                    embed_soup = BeautifulSoup(embed_response.text, 'html.parser')
-                    
-                    # Look for engagement in embed page
-                    embed_text = embed_response.text
-                    
-                    # Try to find likes in various formats
-                    likes_patterns = [
-                        r'"edge_media_preview_like":\s*{\s*"count":\s*(\d+)',
-                        r'"like_count":\s*(\d+)',
-                        r'(\d+(?:,\d+)*)\s*likes?',
-                        r'"likes":\s*(\d+)',
-                    ]
-                    for pattern in likes_patterns:
-                        match = re.search(pattern, embed_text, re.IGNORECASE)
-                        if match:
-                            likes_str = match.group(1).replace(',', '')
-                            likes = int(likes_str) if likes_str.isdigit() else 0
+                },
+                {
+                    'User-Agent': 'Twitterbot/1.0',
+                    'Accept': '*/*',
+                },
+                {
+                    'User-Agent': 'LinkedInBot/1.0 (compatible; Mozilla/5.0; Apache-HttpClient +http://www.linkedin.com)',
+                    'Accept': '*/*',
+                }
+            ]
+            
+            for embed_headers in embed_headers_list:
+                try:
+                    embed_url = f'https://www.instagram.com/p/{reel_id}/embed/'
+                    embed_response = requests.get(embed_url, timeout=10, headers=embed_headers)
+                    if embed_response.status_code == 200:
+                        embed_soup = BeautifulSoup(embed_response.text, 'html.parser')
+                        
+                        # Look for engagement in embed page
+                        embed_text = embed_response.text
+                        
+                        # Log what we got from embed
+                        logger.info(f"Instagram embed page size: {len(embed_text)} bytes")
+                        
+                        # Try to find likes in various formats
+                        likes_patterns = [
+                            r'"edge_media_preview_like":\s*{\s*"count":\s*(\d+)',
+                            r'"like_count":\s*(\d+)',
+                            r'"likes":\s*{\s*"count":\s*(\d+)',
+                            r'(\d{1,3}(?:,\d{3})*)\s*likes?',  # 642,384 likes
+                            r'"likes":\s*(\d+)',
+                        ]
+                        for pattern in likes_patterns:
                             if likes > 0:
                                 break
-                    
-                    # Try to find comments
-                    comments_patterns = [
-                        r'"edge_media_to_comment":\s*{\s*"count":\s*(\d+)',
-                        r'"comment_count":\s*(\d+)',
-                        r'(\d+(?:,\d+)*)\s*comments?',
-                    ]
-                    for pattern in comments_patterns:
-                        match = re.search(pattern, embed_text, re.IGNORECASE)
-                        if match:
-                            comments_str = match.group(1).replace(',', '')
-                            comments = int(comments_str) if comments_str.isdigit() else 0
+                            match = re.search(pattern, embed_text, re.IGNORECASE)
+                            if match:
+                                likes_str = match.group(1).replace(',', '')
+                                likes = int(likes_str) if likes_str.isdigit() else 0
+                                if likes > 0:
+                                    logger.info(f"Found likes from embed: {likes:,}")
+                                    break
+                        
+                        # Try to find comments - multiple patterns
+                        comments_patterns = [
+                            r'"edge_media_to_comment":\s*{\s*"count":\s*(\d+)',
+                            r'"edge_media_to_parent_comment":\s*{\s*"count":\s*(\d+)',
+                            r'"edge_media_preview_comment":\s*{\s*"count":\s*(\d+)',
+                            r'"comment_count":\s*(\d+)',
+                            r'"comments":\s*{\s*"count":\s*(\d+)',
+                            r'(\d{1,3}(?:,\d{3})*)\s*comments?',  # 1,234 comments
+                        ]
+                        for pattern in comments_patterns:
                             if comments > 0:
                                 break
-                    
-                    # Try to find views for videos/reels
-                    views_patterns = [
-                        r'"video_view_count":\s*(\d+)',
-                        r'"play_count":\s*(\d+)',
-                        r'(\d+(?:,\d+)*)\s*views?',
-                    ]
-                    for pattern in views_patterns:
-                        match = re.search(pattern, embed_text, re.IGNORECASE)
-                        if match:
-                            views_str = match.group(1).replace(',', '')
-                            views = int(views_str) if views_str.isdigit() else 0
+                            match = re.search(pattern, embed_text, re.IGNORECASE)
+                            if match:
+                                comments_str = match.group(1).replace(',', '')
+                                comments = int(comments_str) if comments_str.isdigit() else 0
+                                if comments > 0:
+                                    logger.info(f"Found comments from embed: {comments:,}")
+                                    break
+                        
+                        # Try to find views for videos/reels
+                        views_patterns = [
+                            r'"video_view_count":\s*(\d+)',
+                            r'"play_count":\s*(\d+)',
+                            r'(\d+(?:,\d+)*)\s*views?',
+                        ]
+                        for pattern in views_patterns:
                             if views > 0:
                                 break
-                    
-                    # Extract username if not already found
-                    if not username:
-                        username_match = re.search(r'"username":\s*"([^"]+)"', embed_text)
-                        if username_match:
-                            username = username_match.group(1)
-                    
-                    # Extract thumbnail if not already found
-                    if not thumbnail_url:
-                        thumb_match = re.search(r'"display_url":\s*"([^"]+)"', embed_text)
-                        if thumb_match:
-                            thumbnail_url = thumb_match.group(1).replace('\\u0026', '&')
-                        else:
-                            # Try og:image from embed page
-                            og_img = embed_soup.find('meta', property='og:image')
-                            if og_img:
-                                thumbnail_url = og_img.get('content', '')
-            except Exception as e:
-                logger.warning(f"Embed scraping failed: {e}")
+                            match = re.search(pattern, embed_text, re.IGNORECASE)
+                            if match:
+                                views_str = match.group(1).replace(',', '')
+                                views = int(views_str) if views_str.isdigit() else 0
+                                if views > 0:
+                                    logger.info(f"Found views from embed: {views:,}")
+                                    break
+                        
+                        # Extract username if not already found
+                        if not username:
+                            username_match = re.search(r'"username":\s*"([^"]+)"', embed_text)
+                            if username_match:
+                                username = username_match.group(1)
+                        
+                        # Extract thumbnail if not already found
+                        if not thumbnail_url:
+                            thumb_match = re.search(r'"display_url":\s*"([^"]+)"', embed_text)
+                            if thumb_match:
+                                thumbnail_url = thumb_match.group(1).replace('\\u0026', '&')
+                            else:
+                                # Try og:image from embed page
+                                og_img = embed_soup.find('meta', property='og:image')
+                                if og_img:
+                                    thumbnail_url = og_img.get('content', '')
+                        
+                        # If we found data, stop trying other headers
+                        if likes > 0 or comments > 0:
+                            break
+                except Exception as e:
+                    logger.warning(f"Embed scraping failed with {embed_headers.get('User-Agent', '')[:20]}: {e}")
             
             # METHOD 3: Try direct page scraping with Facebook bot UA (gets more access)
             try:

@@ -50,7 +50,13 @@ const MultiPlatformTokenization: React.FC = () => {
   const [contentUrl, setContentUrl] = useState('')
   const [username, setUsername] = useState('')
   const [scrapedContent, setScrapedContent] = useState<SocialMediaContent | null>(null)
-  const [verificationStatus, setVerificationStatus] = useState<{verified: boolean, message: string} | null>(null)
+  const [verificationStatus, setVerificationStatus] = useState<{
+    verified: boolean, 
+    message: string,
+    requires_bio_verification?: boolean,
+    verification_code?: string
+  } | null>(null)
+  const [verificationCode, setVerificationCode] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [scraping, setScraping] = useState(false)
   const [error, setError] = useState<string | null>(null)

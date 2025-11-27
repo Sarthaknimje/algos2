@@ -1887,19 +1887,27 @@ def verify_ownership():
                 "message": "YouTube content is already verified via API"
             })
         
-        if not username:
-            return jsonify({
-                "success": False,
-                "error": f"Username is required for {platform} ownership verification"
-            }), 400
+        # Get additional verification parameters
+        wallet_address = data.get('wallet_address', '').strip()
+        verification_code = data.get('verification_code', '').strip()
         
         scraper = WebScraper()
-        verification_result = scraper.verify_url_ownership(url, platform, username)
+        verification_result = scraper.verify_url_ownership(
+            url=url, 
+            platform=platform, 
+            claimed_username=username,
+            wallet_address=wallet_address,
+            verification_code=verification_code
+        )
         
         return jsonify({
             "success": True,
             "verified": verification_result.get('verified', False),
-            "message": verification_result.get('message', 'Verification completed')
+            "message": verification_result.get('message', 'Verification completed'),
+            "requires_bio_verification": verification_result.get('requires_bio_verification', False),
+            "verification_code": verification_result.get('verification_code', ''),
+            "url_username": verification_result.get('url_username', ''),
+            "verified_username": verification_result.get('verified_username', '')
         })
         
     except Exception as e:

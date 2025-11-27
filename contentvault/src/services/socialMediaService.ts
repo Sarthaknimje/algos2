@@ -154,13 +154,22 @@ class SocialMediaService {
   }
 
   /**
-   * Verify content ownership through URL pattern matching
+   * Verify content ownership through bio verification (strongest) or URL pattern matching
+   * Bio verification: User adds a unique code to their profile bio to prove ownership
    */
   async verifyUrlOwnership(
     url: string,
     platform: 'instagram' | 'twitter' | 'linkedin',
-    claimedUsername?: string
-  ): Promise<{verified: boolean, message: string}> {
+    claimedUsername?: string,
+    walletAddress?: string,
+    verificationCode?: string
+  ): Promise<{
+    verified: boolean, 
+    message: string, 
+    requires_bio_verification?: boolean,
+    verification_code?: string,
+    url_username?: string
+  }> {
     try {
       const response = await fetch(`${API_BASE_URL}/api/verify-ownership`, {
         method: 'POST',
@@ -171,7 +180,9 @@ class SocialMediaService {
         body: JSON.stringify({
           url: url.trim(),
           platform: platform.toLowerCase(),
-          username: claimedUsername?.trim()
+          username: claimedUsername?.trim(),
+          wallet_address: walletAddress,
+          verification_code: verificationCode
         })
       })
 
@@ -179,7 +190,10 @@ class SocialMediaService {
       if (data.success) {
         return {
           verified: data.verified === true,
-          message: data.message || (data.verified ? 'Ownership verified' : 'Ownership verification failed')
+          message: data.message || (data.verified ? 'Ownership verified' : 'Ownership verification failed'),
+          requires_bio_verification: data.requires_bio_verification,
+          verification_code: data.verification_code,
+          url_username: data.url_username
         }
       }
       return {

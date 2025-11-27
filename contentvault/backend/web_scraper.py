@@ -946,134 +946,237 @@ class WebScraper:
             return 0
     
     @staticmethod
-    def verify_url_ownership(url: str, platform: str, claimed_username: str = '') -> Dict[str, any]:
+    def generate_verification_code(wallet_address: str, platform: str) -> str:
         """
-        Verify URL ownership through pattern matching
-        Returns dict with 'verified' (bool) and 'message' (str)
+        Generate a unique verification code for account ownership verification.
+        User must add this code to their profile bio to prove ownership.
+        """
+        import hashlib
+        import time
+        
+        # Create a unique code based on wallet + platform + timestamp (rounded to hour)
+        timestamp = str(int(time.time()) // 3600)  # Changes every hour
+        raw = f"{wallet_address}:{platform}:{timestamp}"
+        hash_obj = hashlib.sha256(raw.encode())
+        code = f"CV-{hash_obj.hexdigest()[:8].upper()}"
+        return code
+    
+    @staticmethod
+    def verify_bio_code(platform: str, username: str, verification_code: str) -> Dict[str, any]:
+        """
+        Verify that the user has added our verification code to their profile bio.
+        This proves they own the account.
         """
         try:
+            bio_text = ""
+            
             if platform == 'instagram':
-                # Extract username from Instagram URL
-                # Format: https://www.instagram.com/username/reel/ABC123/ or /reel/ABC123/
+                # Try to fetch Instagram profile bio
+                profile_url = f'https://www.instagram.com/{username}/'
+                headers_list = [
+                    {'User-Agent': 'facebookexternalhit/1.1'},
+                    {'User-Agent': 'Twitterbot/1.0'},
+                    {'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1)'},
+                ]
+                
+                for headers in headers_list:
+                    try:
+                        response = requests.get(profile_url, headers=headers, timeout=10)
+                        if response.status_code == 200:
+                            soup = BeautifulSoup(response.text, 'html.parser')
+                            # Try meta description which often contains bio
+                            meta_desc = soup.find('meta', property='og:description')
+                            if meta_desc:
+                                bio_text = meta_desc.get('content', '')
+                            # Also check page content
+                            bio_text += ' ' + response.text
+                            break
+                    except:
+                        continue
+                        
+            elif platform == 'twitter':
+                # Try to fetch Twitter profile
+                profile_url = f'https://twitter.com/{username}'
+                try:
+                    # Try FxTwitter API first
+                    fx_url = f'https://api.fxtwitter.com/{username}'
+                    response = requests.get(fx_url, timeout=10, headers={
+                        'User-Agent': 'Mozilla/5.0',
+                        'Accept': 'application/json'
+                    })
+                    if response.status_code == 200:
+                        data = response.json()
+                        if 'user' in data:
+                            bio_text = data['user'].get('description', '') or data['user'].get('bio', '')
+                except:
+                    pass
+                
+                if not bio_text:
+                    # Fallback to page scraping
+                    headers = {'User-Agent': 'Twitterbot/1.0'}
+                    response = requests.get(profile_url, headers=headers, timeout=10)
+                    if response.status_code == 200:
+                        soup = BeautifulSoup(response.text, 'html.parser')
+                        meta_desc = soup.find('meta', property='og:description')
+                        if meta_desc:
+                            bio_text = meta_desc.get('content', '')
+                        bio_text += ' ' + response.text
+                        
+            elif platform == 'linkedin':
+                # LinkedIn profile scraping
+                profile_url = f'https://www.linkedin.com/in/{username}/'
+                headers = {
+                    'User-Agent': 'LinkedInBot/1.0 (compatible; Mozilla/5.0)',
+                    'Accept': '*/*'
+                }
+                try:
+                    response = requests.get(profile_url, headers=headers, timeout=10)
+                    if response.status_code == 200:
+                        soup = BeautifulSoup(response.text, 'html.parser')
+                        meta_desc = soup.find('meta', property='og:description')
+                        if meta_desc:
+                            bio_text = meta_desc.get('content', '')
+                        bio_text += ' ' + response.text
+                except:
+                    pass
+            
+            # Check if verification code exists in bio/profile
+            if verification_code and verification_code.upper() in bio_text.upper():
+                return {
+                    'verified': True,
+                    'message': f'✅ Account verified! Code {verification_code} found in your {platform} profile.'
+                }
+            else:
+                return {
+                    'verified': False,
+                    'message': f'Code not found. Please add "{verification_code}" to your {platform} bio and try again. This proves you own the account.'
+                }
+                
+        except Exception as e:
+            logger.error(f"Bio verification error: {e}")
+            return {
+                'verified': False,
+                'message': f'Could not verify bio. Please try again.'
+            }
+    
+    @staticmethod
+    def verify_url_ownership(url: str, platform: str, claimed_username: str = '', wallet_address: str = '', verification_code: str = '') -> Dict[str, any]:
+        """
+        Verify URL ownership through bio verification (strongest) or username matching.
+        
+        Verification Flow:
+        1. Extract username from URL
+        2. If verification_code provided, check if it's in user's bio (STRONGEST verification)
+        3. If wallet_address provided but no code, generate a code for user to add to bio
+        4. Basic username matching as fallback
+        
+        Returns dict with 'verified' (bool), 'message' (str), 'verification_code' if needed, 'requires_bio_verification' flag
+        """
+        try:
+            url_username = None
+            
+            # Extract username from URL based on platform
+            if platform == 'instagram':
                 username_match = re.search(r'instagram\.com/([^/?]+)/reel/', url)
                 if not username_match:
-                    # Try alternative format: /reel/ABC123/ (no username in URL - common for reels)
                     username_match = re.search(r'instagram\.com/([^/?]+)', url)
-                    # If it's just 'reel', there's no username in URL
-                    if username_match and username_match.group(1) == 'reel':
+                    if username_match and username_match.group(1) in ['reel', 'reels', 'p']:
                         username_match = None
-                
                 if username_match:
-                    # Username found in URL - strict verification
                     url_username = username_match.group(1).lower()
-                    if claimed_username:
-                        claimed_lower = claimed_username.replace('@', '').lower()
-                        if url_username != claimed_lower:
-                            return {
-                                'verified': False,
-                                'message': f'Username mismatch! URL shows @{url_username} but you claimed @{claimed_username}. Only the content owner can tokenize.'
-                            }
-                        return {
-                            'verified': True,
-                            'message': f'Username verified: @{url_username} matches your claim.'
-                        }
-                    else:
-                        # No username claimed - require it for verification
-                        return {
-                            'verified': False,
-                            'message': f'Please enter your Instagram username (@{url_username}) to verify ownership. URL shows this reel belongs to @{url_username}.'
-                        }
-                else:
-                    # No username in URL (common for reel URLs like /reel/ABC123/)
-                    # Accept username if provided by user
-                    if claimed_username:
-                        return {
-                            'verified': True,
-                            'message': f'Instagram Reel URL detected. Username @{claimed_username} provided for verification. Please ensure this is your content.'
-                        }
-                    return {
-                        'verified': False,
-                        'message': 'Instagram Reel URL detected (no username in URL). Please enter your Instagram username to verify ownership.'
-                    }
-            
+                    
             elif platform == 'twitter':
-                # Handle both twitter.com and x.com URLs
                 username_match = re.search(r'(?:twitter\.com|x\.com)/([^/?]+)/status/', url)
                 if username_match:
                     url_username = username_match.group(1).lower()
-                    if claimed_username:
-                        claimed_lower = claimed_username.replace('@', '').lower()
-                        if url_username != claimed_lower:
-                            return {
-                                'verified': False,
-                                'message': f'Username mismatch! URL shows @{url_username} but you claimed @{claimed_username}. Only the content owner can tokenize.'
-                            }
-                        return {
-                            'verified': True,
-                            'message': f'Username verified: @{url_username} matches your claim.'
-                        }
-                    return {
-                        'verified': False,
-                        'message': f'Please enter your Twitter/X username (@{url_username}) to verify ownership. URL shows this tweet belongs to @{url_username}.'
-                    }
-                return {
-                    'verified': False,
-                    'message': 'Could not extract username from Twitter/X URL. Please ensure the URL format is: https://twitter.com/username/status/... or https://x.com/username/status/...'
-                }
-            
+                    
             elif platform == 'linkedin':
-                # LinkedIn URLs are harder to verify - extract username from URL
-                # Format: /in/username/posts/... or /posts/username_activity-123456
                 username_match = re.search(r'linkedin\.com/in/([^/?]+)', url)
                 if not username_match:
-                    # Try posts format: /posts/username_activity-123456
                     posts_match = re.search(r'linkedin\.com/posts/([^_]+)_', url)
                     if posts_match:
                         username_match = posts_match
-                
                 if username_match:
                     url_username = username_match.group(1).lower()
-                    if claimed_username:
-                        claimed_lower = claimed_username.replace('@', '').lower()
-                        if url_username != claimed_lower:
-                            return {
-                                'verified': False,
-                                'message': f'Username mismatch! URL shows @{url_username} but you claimed @{claimed_username}. Only the content owner can tokenize.'
-                            }
-                        return {
-                            'verified': True,
-                            'message': f'Username verified: @{url_username} matches your claim.'
-                        }
+            
+            # Determine the username to verify
+            final_username = claimed_username.replace('@', '').lower() if claimed_username else url_username
+            
+            if not final_username:
+                return {
+                    'verified': False,
+                    'message': f'Could not determine username. Please enter your {platform} username.',
+                    'requires_bio_verification': False
+                }
+            
+            # Check URL username matches claimed username
+            if url_username and claimed_username:
+                claimed_lower = claimed_username.replace('@', '').lower()
+                if url_username != claimed_lower:
                     return {
                         'verified': False,
-                        'message': f'Please enter your LinkedIn username (@{url_username}) to verify ownership. URL shows this post belongs to @{url_username}.'
+                        'message': f'⚠️ Username mismatch! URL shows @{url_username} but you entered @{claimed_username}. Only the content owner can tokenize their content.',
+                        'requires_bio_verification': False
                     }
-                
-                # Fallback: If URL format is valid but username not found
-                if 'linkedin.com/posts' in url or 'linkedin.com/feed' in url or 'linkedin.com/in/' in url:
-                    if claimed_username:
-                        return {
-                            'verified': True,
-                            'message': 'LinkedIn post detected. Username provided.'
-                        }
+            
+            # BIO VERIFICATION (Strongest - Proves ownership)
+            if verification_code and wallet_address:
+                # User provided a verification code - check if it's in their bio
+                bio_result = WebScraper.verify_bio_code(platform, final_username, verification_code)
+                if bio_result['verified']:
+                    return {
+                        'verified': True,
+                        'message': f'✅ Account ownership verified! Code {verification_code} found in @{final_username}\'s {platform} profile.',
+                        'requires_bio_verification': False,
+                        'verified_username': final_username
+                    }
+                else:
+                    # Code not found - tell user to add it
                     return {
                         'verified': False,
-                        'message': 'Please enter your LinkedIn username to verify ownership.'
+                        'message': f'🔐 To prove you own @{final_username}, please add this code to your {platform} bio:\n\n{verification_code}\n\nThen click "Verify" again.',
+                        'requires_bio_verification': True,
+                        'verification_code': verification_code
+                    }
+            
+            # Generate verification code if wallet connected but no code provided
+            if wallet_address and not verification_code:
+                new_code = WebScraper.generate_verification_code(wallet_address, platform)
+                return {
+                    'verified': False,
+                    'message': f'🔐 Account Verification Required\n\nTo prove you own @{final_username}, please add this code to your {platform} bio:\n\n{new_code}\n\nThis prevents others from tokenizing your content. Click "Verify" after adding the code.',
+                    'requires_bio_verification': True,
+                    'verification_code': new_code,
+                    'url_username': url_username,
+                    'claimed_username': final_username
+                }
+            
+            # No wallet - basic username verification only (weaker)
+            if url_username:
+                if not claimed_username:
+                    return {
+                        'verified': False,
+                        'message': f'Please enter your {platform} username (@{url_username}) to verify you own this content.',
+                        'requires_bio_verification': False
                     }
                 return {
                     'verified': False,
-                    'message': 'Invalid LinkedIn URL format. Expected: https://www.linkedin.com/in/username/posts/... or https://www.linkedin.com/posts/username_activity-...'
+                    'message': f'⚠️ Connect your wallet for full verification. Username @{url_username} detected in URL.',
+                    'requires_bio_verification': True,
+                    'url_username': url_username
                 }
             
             return {
                 'verified': False,
-                'message': f'Unsupported platform: {platform}'
+                'message': f'Could not extract username from {platform} URL. Please check the URL format.',
+                'requires_bio_verification': False
             }
             
         except Exception as e:
             logger.error(f"Error verifying URL ownership: {e}")
             return {
                 'verified': False,
-                'message': f'Verification error: {str(e)}'
+                'message': f'Verification error: {str(e)}',
+                'requires_bio_verification': False
             }
 

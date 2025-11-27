@@ -232,8 +232,12 @@ class WebScraper:
                             description_text = og_desc.get('content', '')
                     
                     # Parse engagement from og:description or og:title
-                    # Format: "280K likes, 1,621 comments - username on Date: caption"
+                    # Instagram formats:
+                    # - "280K likes, 1,621 comments - username on Date: caption"
+                    # - "6.2M likes, 70K comments - username: caption"
                     all_text = f"{title_text} {description_text}"
+                    
+                    logger.info(f"Instagram meta text: {all_text[:200]}...")
                     
                     # Extract likes from meta text if not found yet
                     if likes == 0:
@@ -371,86 +375,124 @@ class WebScraper:
             thumbnail_url = ''
             author_name = username
             
-            # METHOD 1: Try Twitter oEmbed API (publish.twitter.com)
+            # METHOD 0: Try FxTwitter/VxTwitter API (public, returns engagement!)
             try:
-                oembed_url = f'https://publish.twitter.com/oembed?url={tweet_url}'
-                oembed_response = requests.get(oembed_url, timeout=10, headers={
-                    'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)'
-                })
-                if oembed_response.status_code == 200:
-                    oembed_data = oembed_response.json()
-                    author_name = oembed_data.get('author_name', username) or username
-                    
-                    # Parse HTML content for tweet text
-                    html_content = oembed_data.get('html', '')
-                    if html_content:
-                        # Extract text between <p> tags
-                        text_match = re.search(r'<p[^>]*>(.+?)</p>', html_content, re.DOTALL)
-                        if text_match:
-                            tweet_text = re.sub(r'<[^>]+>', '', text_match.group(1))
-                            tweet_text = tweet_text.strip()
-                    
-                    logger.info(f"Twitter oEmbed: author=@{author_name}")
-            except Exception as e:
-                logger.warning(f"Twitter oEmbed failed: {e}")
-            
-            # METHOD 2: Try Twitter's Syndication API
-            try:
-                syndication_url = f'https://cdn.syndication.twimg.com/tweet-result?id={tweet_id}&lang=en&token=x'
-                synd_response = requests.get(syndication_url, timeout=10, headers={
-                    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15',
-                    'Accept': 'application/json',
-                    'Referer': 'https://platform.twitter.com/',
-                    'Origin': 'https://platform.twitter.com'
+                # FxTwitter provides JSON API with full engagement data
+                fx_url = f'https://api.fxtwitter.com/status/{tweet_id}'
+                fx_response = requests.get(fx_url, timeout=10, headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Accept': 'application/json'
                 })
                 
-                if synd_response.status_code == 200:
-                    try:
-                        tweet_data = synd_response.json()
+                if fx_response.status_code == 200:
+                    fx_data = fx_response.json()
+                    tweet_data = fx_data.get('tweet', {})
+                    
+                    if tweet_data:
+                        likes = tweet_data.get('likes', 0) or 0
+                        retweets = tweet_data.get('retweets', 0) or 0
+                        replies = tweet_data.get('replies', 0) or 0
+                        views = tweet_data.get('views', 0) or 0
+                        quotes = tweet_data.get('quotes', 0) or 0
+                        bookmarks = tweet_data.get('bookmarks', 0) or 0
                         
-                        # Extract engagement from JSON
-                        likes = tweet_data.get('favorite_count', 0) or tweet_data.get('favoriteCount', 0) or 0
-                        retweets = tweet_data.get('retweet_count', 0) or tweet_data.get('retweetCount', 0) or 0
-                        replies = tweet_data.get('reply_count', 0) or tweet_data.get('replyCount', 0) or 0
-                        quotes = tweet_data.get('quote_count', 0) or tweet_data.get('quoteCount', 0) or 0
-                        bookmarks = tweet_data.get('bookmark_count', 0) or tweet_data.get('bookmarkCount', 0) or 0
+                        tweet_text = tweet_data.get('text', '')
+                        author_name = tweet_data.get('author', {}).get('screen_name', username) or username
                         
-                        # Views can be in different formats
-                        views_data = tweet_data.get('views', tweet_data.get('viewCount', 0))
-                        if isinstance(views_data, dict):
-                            views = int(views_data.get('count', 0) or 0)
-                        elif isinstance(views_data, (int, str)):
-                            views = int(views_data) if str(views_data).isdigit() else 0
-                        
-                        # Get tweet text
-                        if not tweet_text:
-                            tweet_text = tweet_data.get('text', '')
-                        
-                        # Get author info
-                        user_data = tweet_data.get('user', {})
-                        if user_data:
-                            author_name = user_data.get('screen_name', username) or username
-                        
-                        # Get media/thumbnail
-                        media_list = tweet_data.get('mediaDetails', []) or tweet_data.get('photos', []) or tweet_data.get('entities', {}).get('media', [])
-                        if media_list and len(media_list) > 0:
-                            thumbnail_url = media_list[0].get('media_url_https', '') or media_list[0].get('url', '')
-                        
-                        # Video thumbnail
-                        if not thumbnail_url and tweet_data.get('video'):
-                            video = tweet_data.get('video', {})
-                            thumbnail_url = video.get('poster', '')
-                        
-                        # User profile pic as fallback
-                        if not thumbnail_url and user_data:
-                            thumbnail_url = user_data.get('profile_image_url_https', '').replace('_normal', '')
+                        # Get media
+                        media = tweet_data.get('media', {})
+                        if media and media.get('photos'):
+                            thumbnail_url = media['photos'][0].get('url', '')
+                        elif media and media.get('videos'):
+                            thumbnail_url = media['videos'][0].get('thumbnail_url', '')
                         
                         if likes > 0 or retweets > 0:
-                            logger.info(f"Twitter syndication: {likes:,} likes, {retweets:,} retweets, {replies:,} replies, {views:,} views")
-                    except (json.JSONDecodeError, ValueError) as e:
-                        logger.warning(f"Twitter syndication JSON error: {e}")
+                            logger.info(f"FxTwitter API: {likes:,} likes, {retweets:,} retweets, {replies:,} replies, {views:,} views, {bookmarks:,} bookmarks")
             except Exception as e:
-                logger.warning(f"Twitter syndication API failed: {e}")
+                logger.warning(f"FxTwitter API failed: {e}")
+            
+            # METHOD 1: Try Twitter oEmbed API (publish.twitter.com) 
+            if likes == 0 and retweets == 0:
+                try:
+                    oembed_url = f'https://publish.twitter.com/oembed?url={tweet_url}'
+                    oembed_response = requests.get(oembed_url, timeout=10, headers={
+                        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)'
+                    })
+                    if oembed_response.status_code == 200:
+                        oembed_data = oembed_response.json()
+                        author_name = oembed_data.get('author_name', username) or username
+                        
+                        # Parse HTML content for tweet text
+                        html_content = oembed_data.get('html', '')
+                        if html_content and not tweet_text:
+                            # Extract text between <p> tags
+                            text_match = re.search(r'<p[^>]*>(.+?)</p>', html_content, re.DOTALL)
+                            if text_match:
+                                tweet_text = re.sub(r'<[^>]+>', '', text_match.group(1))
+                                tweet_text = tweet_text.strip()
+                        
+                        logger.info(f"Twitter oEmbed: author=@{author_name}")
+                except Exception as e:
+                    logger.warning(f"Twitter oEmbed failed: {e}")
+            
+            # METHOD 2: Try Twitter's Syndication API (if FxTwitter didn't work)
+            if likes == 0 and retweets == 0:
+                try:
+                    syndication_url = f'https://cdn.syndication.twimg.com/tweet-result?id={tweet_id}&lang=en&token=x'
+                    synd_response = requests.get(syndication_url, timeout=10, headers={
+                        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15',
+                        'Accept': 'application/json',
+                        'Referer': 'https://platform.twitter.com/',
+                        'Origin': 'https://platform.twitter.com'
+                    })
+                    
+                    if synd_response.status_code == 200:
+                        try:
+                            tweet_data = synd_response.json()
+                            
+                            # Extract engagement from JSON
+                            likes = tweet_data.get('favorite_count', 0) or tweet_data.get('favoriteCount', 0) or 0
+                            retweets = tweet_data.get('retweet_count', 0) or tweet_data.get('retweetCount', 0) or 0
+                            replies = tweet_data.get('reply_count', 0) or tweet_data.get('replyCount', 0) or 0
+                            quotes = tweet_data.get('quote_count', 0) or tweet_data.get('quoteCount', 0) or 0
+                            bookmarks = tweet_data.get('bookmark_count', 0) or tweet_data.get('bookmarkCount', 0) or 0
+                            
+                            # Views can be in different formats
+                            views_data = tweet_data.get('views', tweet_data.get('viewCount', 0))
+                            if isinstance(views_data, dict):
+                                views = int(views_data.get('count', 0) or 0)
+                            elif isinstance(views_data, (int, str)):
+                                views = int(views_data) if str(views_data).isdigit() else 0
+                            
+                            # Get tweet text
+                            if not tweet_text:
+                                tweet_text = tweet_data.get('text', '')
+                            
+                            # Get author info
+                            user_data = tweet_data.get('user', {})
+                            if user_data:
+                                author_name = user_data.get('screen_name', username) or username
+                            
+                            # Get media/thumbnail
+                            media_list = tweet_data.get('mediaDetails', []) or tweet_data.get('photos', []) or tweet_data.get('entities', {}).get('media', [])
+                            if media_list and len(media_list) > 0:
+                                thumbnail_url = media_list[0].get('media_url_https', '') or media_list[0].get('url', '')
+                            
+                            # Video thumbnail
+                            if not thumbnail_url and tweet_data.get('video'):
+                                video = tweet_data.get('video', {})
+                                thumbnail_url = video.get('poster', '')
+                            
+                            # User profile pic as fallback
+                            if not thumbnail_url and user_data:
+                                thumbnail_url = user_data.get('profile_image_url_https', '').replace('_normal', '')
+                            
+                            if likes > 0 or retweets > 0:
+                                logger.info(f"Twitter syndication: {likes:,} likes, {retweets:,} retweets, {replies:,} replies, {views:,} views")
+                        except (json.JSONDecodeError, ValueError) as e:
+                            logger.warning(f"Twitter syndication JSON error: {e}")
+                except Exception as e:
+                    logger.warning(f"Twitter syndication API failed: {e}")
             
             # METHOD 3: Try Nitter instances (public Twitter mirrors)
             if likes == 0 and retweets == 0:

@@ -216,26 +216,64 @@ class WebScraper:
                         if og_image:
                             thumbnail_url = og_image.get('content', '')
                     
+                    # Get og:title - Instagram format: "X likes, Y comments - username on Date"
+                    og_title = soup.find('meta', property='og:title')
+                    og_title_content = og_title.get('content', '') if og_title else ''
+                    
+                    logger.info(f"Instagram og:title: {og_title_content[:150]}")
+                    
+                    # Parse engagement from og:title FIRST (most reliable source!)
+                    # Format: "70,542 likes, 586 comments - username on November 27, 2025"
+                    if og_title_content and likes == 0:
+                        # Try to get likes from og:title
+                        abbrev_likes_title = re.search(r'([\d.]+)\s*([KMB])\s*likes?', og_title_content, re.IGNORECASE)
+                        exact_likes_title = re.search(r'([\d,]+)\s*likes?', og_title_content, re.IGNORECASE)
+                        
+                        if abbrev_likes_title:
+                            num = float(abbrev_likes_title.group(1))
+                            suffix = abbrev_likes_title.group(2).upper()
+                            multiplier = {'K': 1000, 'M': 1000000, 'B': 1000000000}.get(suffix, 1)
+                            likes = int(num * multiplier)
+                            logger.info(f"Found likes from og:title: {abbrev_likes_title.group(0)} -> {likes:,}")
+                        elif exact_likes_title:
+                            likes_str = exact_likes_title.group(1).replace(',', '')
+                            if likes_str.isdigit():
+                                likes = int(likes_str)
+                                logger.info(f"Found exact likes from og:title: {likes:,}")
+                    
+                    if og_title_content and comments == 0:
+                        # Try to get comments from og:title
+                        abbrev_comments_title = re.search(r'([\d.]+)\s*([KMB])\s*comments?', og_title_content, re.IGNORECASE)
+                        exact_comments_title = re.search(r'([\d,]+)\s*comments?', og_title_content, re.IGNORECASE)
+                        
+                        if abbrev_comments_title:
+                            num = float(abbrev_comments_title.group(1))
+                            suffix = abbrev_comments_title.group(2).upper()
+                            multiplier = {'K': 1000, 'M': 1000000, 'B': 1000000000}.get(suffix, 1)
+                            comments = int(num * multiplier)
+                            logger.info(f"Found comments from og:title: {abbrev_comments_title.group(0)} -> {comments:,}")
+                        elif exact_comments_title:
+                            comments_str = exact_comments_title.group(1).replace(',', '')
+                            if comments_str.isdigit():
+                                comments = int(comments_str)
+                                logger.info(f"Found exact comments from og:title: {comments:,}")
+                    
                     if not title_text:
-                        og_title = soup.find('meta', property='og:title')
-                        if og_title:
-                            title_content = og_title.get('content', '')
-                            # Extract username from title
-                            username_match = re.search(r'^([^\s]+)\s+on\s+Instagram', title_content, re.IGNORECASE)
-                            if username_match and not username:
-                                username = username_match.group(1).replace('@', '')
-                            title_text = re.sub(r'\s+on\s+Instagram.*$', '', title_content, flags=re.IGNORECASE)
+                        # Extract username from title
+                        username_match = re.search(r'^([^\s]+)\s+on\s+Instagram', og_title_content, re.IGNORECASE)
+                        if username_match and not username:
+                            username = username_match.group(1).replace('@', '')
+                        title_text = re.sub(r'\s+on\s+Instagram.*$', '', og_title_content, flags=re.IGNORECASE)
+                        # Remove engagement prefix from title
+                        title_text = re.sub(r'^[\d,.]+[KMB]?\s*likes?,?\s*[\d,.]+[KMB]?\s*comments?\s*-?\s*', '', title_text, flags=re.IGNORECASE)
                     
                     if not description_text:
                         og_desc = soup.find('meta', property='og:description')
                         if og_desc:
                             description_text = og_desc.get('content', '')
                     
-                    # Parse engagement from og:description or og:title
-                    # Instagram formats:
-                    # - "280K likes, 1,621 comments - username on Date: caption"
-                    # - "6.2M likes, 70K comments - username: caption"
-                    all_text = f"{title_text} {description_text}"
+                    # Combine for fallback parsing
+                    all_text = f"{og_title_content} {description_text}"
                     
                     logger.info(f"Instagram meta text: {all_text[:200]}...")
                     

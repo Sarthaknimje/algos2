@@ -499,7 +499,8 @@ class WebScraper:
     def scrape_linkedin_post(post_url: str) -> Optional[Dict]:
         """
         Scrape LinkedIn Post data from URL
-        Extracts likes, comments, reposts from meta tags
+        Extracts reactions, comments, reposts from meta tags
+        LinkedIn format: "45 reactions · 30 comments" or "1.2K reactions"
         """
         try:
             # LinkedIn URL format: https://www.linkedin.com/posts/username_activity-1234567890-abcdef
@@ -523,6 +524,10 @@ class WebScraper:
                 {
                     'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
                     'Accept': '*/*',
+                },
+                {
+                    'User-Agent': 'Googlebot/2.1 (+http://www.google.com/bot.html)',
+                    'Accept': 'text/html',
                 },
                 {
                     'User-Agent': 'LinkedInBot/1.0 (compatible; Mozilla/5.0; Apache-HttpClient +http://www.linkedin.com)',
@@ -549,53 +554,83 @@ class WebScraper:
                         # Combine title and description for parsing
                         all_text = f"{title_text} {desc_text}"
                         
-                        # Get post text
+                        # Log for debugging
+                        logger.info(f"LinkedIn meta text: {all_text[:200]}...")
+                        
+                        # Get post text (clean version)
                         post_text = desc_text or title_text
                         
                         # Parse engagement from meta tags
-                        # Format: "123 likes, 45 comments, 12 reposts" or "1.2K likes"
+                        # LinkedIn formats:
+                        # - "45 reactions · 30 comments"
+                        # - "1.2K reactions"
+                        # - "123 likes"
+                        # - "45 reactions, 30 comments, 12 reposts"
                         
-                        # Likes/Reactions
-                        abbrev_likes = re.search(r'([\d.]+)\s*([KMB])\s*(?:likes?|reactions?)', all_text, re.IGNORECASE)
-                        if abbrev_likes:
-                            num = float(abbrev_likes.group(1))
-                            suffix = abbrev_likes.group(2).upper()
-                            multiplier = {'K': 1000, 'M': 1000000, 'B': 1000000000}.get(suffix, 1)
-                            likes = int(num * multiplier)
-                        else:
-                            exact_likes = re.search(r'([\d,]+)\s*(?:likes?|reactions?)', all_text, re.IGNORECASE)
-                            if exact_likes:
-                                likes_str = exact_likes.group(1).replace(',', '')
-                                if likes_str.isdigit():
-                                    likes = int(likes_str)
+                        # Reactions/Likes - Try multiple patterns
+                        # Pattern 1: "45 reactions" or "1.2K reactions"
+                        reaction_patterns = [
+                            r'([\d,.]+)\s*([KMB])?\s*reactions?',  # 45 reactions, 1.2K reactions
+                            r'([\d,.]+)\s*([KMB])?\s*likes?',       # 45 likes
+                            r'([\d,.]+)\s*([KMB])?\s*(?:people|others)\s+(?:like|react)',  # 45 people like
+                        ]
                         
-                        # Comments
-                        abbrev_comments = re.search(r'([\d.]+)\s*([KMB])\s*comments?', all_text, re.IGNORECASE)
-                        if abbrev_comments:
-                            num = float(abbrev_comments.group(1))
-                            suffix = abbrev_comments.group(2).upper()
-                            multiplier = {'K': 1000, 'M': 1000000, 'B': 1000000000}.get(suffix, 1)
-                            comments = int(num * multiplier)
-                        else:
-                            exact_comments = re.search(r'([\d,]+)\s*comments?', all_text, re.IGNORECASE)
-                            if exact_comments:
-                                comments_str = exact_comments.group(1).replace(',', '')
-                                if comments_str.isdigit():
-                                    comments = int(comments_str)
+                        for pattern in reaction_patterns:
+                            match = re.search(pattern, all_text, re.IGNORECASE)
+                            if match:
+                                num_str = match.group(1).replace(',', '')
+                                suffix = match.group(2).upper() if match.group(2) else ''
+                                if num_str.replace('.', '').isdigit():
+                                    num = float(num_str)
+                                    if suffix:
+                                        multiplier = {'K': 1000, 'M': 1000000, 'B': 1000000000}.get(suffix, 1)
+                                        likes = int(num * multiplier)
+                                    else:
+                                        likes = int(num)
+                                    logger.info(f"LinkedIn found reactions: {match.group(0)} -> {likes:,}")
+                                    break
+                        
+                        # Comments - Try multiple patterns
+                        comment_patterns = [
+                            r'([\d,.]+)\s*([KMB])?\s*comments?',
+                            r'([\d,.]+)\s*([KMB])?\s*(?:replies|reply)',
+                        ]
+                        
+                        for pattern in comment_patterns:
+                            match = re.search(pattern, all_text, re.IGNORECASE)
+                            if match:
+                                num_str = match.group(1).replace(',', '')
+                                suffix = match.group(2).upper() if match.group(2) else ''
+                                if num_str.replace('.', '').isdigit():
+                                    num = float(num_str)
+                                    if suffix:
+                                        multiplier = {'K': 1000, 'M': 1000000, 'B': 1000000000}.get(suffix, 1)
+                                        comments = int(num * multiplier)
+                                    else:
+                                        comments = int(num)
+                                    logger.info(f"LinkedIn found comments: {match.group(0)} -> {comments:,}")
+                                    break
                         
                         # Reposts/Shares
-                        abbrev_shares = re.search(r'([\d.]+)\s*([KMB])\s*(?:reposts?|shares?)', all_text, re.IGNORECASE)
-                        if abbrev_shares:
-                            num = float(abbrev_shares.group(1))
-                            suffix = abbrev_shares.group(2).upper()
-                            multiplier = {'K': 1000, 'M': 1000000, 'B': 1000000000}.get(suffix, 1)
-                            shares = int(num * multiplier)
-                        else:
-                            exact_shares = re.search(r'([\d,]+)\s*(?:reposts?|shares?)', all_text, re.IGNORECASE)
-                            if exact_shares:
-                                shares_str = exact_shares.group(1).replace(',', '')
-                                if shares_str.isdigit():
-                                    shares = int(shares_str)
+                        share_patterns = [
+                            r'([\d,.]+)\s*([KMB])?\s*reposts?',
+                            r'([\d,.]+)\s*([KMB])?\s*shares?',
+                        ]
+                        
+                        for pattern in share_patterns:
+                            match = re.search(pattern, all_text, re.IGNORECASE)
+                            if match:
+                                num_str = match.group(1).replace(',', '')
+                                suffix = match.group(2).upper() if match.group(2) else ''
+                                if num_str.replace('.', '').isdigit():
+                                    num = float(num_str)
+                                    if suffix:
+                                        multiplier = {'K': 1000, 'M': 1000000, 'B': 1000000000}.get(suffix, 1)
+                                        shares = int(num * multiplier)
+                                    else:
+                                        shares = int(num)
+                                    logger.info(f"LinkedIn found shares: {match.group(0)} -> {shares:,}")
+                                    break
                         
                         if likes > 0 or comments > 0 or thumbnail_url:
                             break  # Got good data
@@ -611,7 +646,7 @@ class WebScraper:
                     author_match = posts_match
             author = author_match.group(1) if author_match else ''
             
-            logger.info(f"LinkedIn scrape: @{author} - {likes:,} likes, {comments:,} comments, {shares:,} shares")
+            logger.info(f"LinkedIn scrape: @{author} - {likes:,} reactions, {comments:,} comments, {shares:,} shares")
             
             return {
                 'id': post_id,

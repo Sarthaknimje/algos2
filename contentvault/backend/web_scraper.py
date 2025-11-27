@@ -343,8 +343,11 @@ class WebScraper:
     @staticmethod
     def scrape_twitter_tweet(tweet_url: str) -> Optional[Dict]:
         """
-        Scrape Twitter/X Tweet data from URL
-        Uses Twitter's syndication API for engagement data
+        Scrape Twitter/X Tweet data using multiple methods:
+        1. Twitter oEmbed API (publish.twitter.com)
+        2. Syndication API
+        3. Nitter (public Twitter mirror)
+        4. Direct page scraping
         """
         try:
             # Twitter URL format: https://twitter.com/username/status/1234567890 or x.com
@@ -362,17 +365,43 @@ class WebScraper:
             retweets = 0
             replies = 0
             views = 0
+            quotes = 0
+            bookmarks = 0
             tweet_text = ''
             thumbnail_url = ''
             author_name = username
             
-            # METHOD 1: Try Twitter's Syndication API (returns JSON with engagement!)
+            # METHOD 1: Try Twitter oEmbed API (publish.twitter.com)
             try:
-                syndication_url = f'https://cdn.syndication.twimg.com/tweet-result?id={tweet_id}&lang=en'
+                oembed_url = f'https://publish.twitter.com/oembed?url={tweet_url}'
+                oembed_response = requests.get(oembed_url, timeout=10, headers={
+                    'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)'
+                })
+                if oembed_response.status_code == 200:
+                    oembed_data = oembed_response.json()
+                    author_name = oembed_data.get('author_name', username) or username
+                    
+                    # Parse HTML content for tweet text
+                    html_content = oembed_data.get('html', '')
+                    if html_content:
+                        # Extract text between <p> tags
+                        text_match = re.search(r'<p[^>]*>(.+?)</p>', html_content, re.DOTALL)
+                        if text_match:
+                            tweet_text = re.sub(r'<[^>]+>', '', text_match.group(1))
+                            tweet_text = tweet_text.strip()
+                    
+                    logger.info(f"Twitter oEmbed: author=@{author_name}")
+            except Exception as e:
+                logger.warning(f"Twitter oEmbed failed: {e}")
+            
+            # METHOD 2: Try Twitter's Syndication API
+            try:
+                syndication_url = f'https://cdn.syndication.twimg.com/tweet-result?id={tweet_id}&lang=en&token=x'
                 synd_response = requests.get(syndication_url, timeout=10, headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15',
                     'Accept': 'application/json',
-                    'Referer': 'https://platform.twitter.com/'
+                    'Referer': 'https://platform.twitter.com/',
+                    'Origin': 'https://platform.twitter.com'
                 })
                 
                 if synd_response.status_code == 200:
@@ -380,45 +409,111 @@ class WebScraper:
                         tweet_data = synd_response.json()
                         
                         # Extract engagement from JSON
-                        likes = tweet_data.get('favorite_count', 0) or 0
-                        retweets = tweet_data.get('retweet_count', 0) or 0
-                        replies = tweet_data.get('reply_count', 0) or tweet_data.get('conversation_count', 0) or 0
-                        views = tweet_data.get('views', {}).get('count', 0) if isinstance(tweet_data.get('views'), dict) else 0
+                        likes = tweet_data.get('favorite_count', 0) or tweet_data.get('favoriteCount', 0) or 0
+                        retweets = tweet_data.get('retweet_count', 0) or tweet_data.get('retweetCount', 0) or 0
+                        replies = tweet_data.get('reply_count', 0) or tweet_data.get('replyCount', 0) or 0
+                        quotes = tweet_data.get('quote_count', 0) or tweet_data.get('quoteCount', 0) or 0
+                        bookmarks = tweet_data.get('bookmark_count', 0) or tweet_data.get('bookmarkCount', 0) or 0
+                        
+                        # Views can be in different formats
+                        views_data = tweet_data.get('views', tweet_data.get('viewCount', 0))
+                        if isinstance(views_data, dict):
+                            views = int(views_data.get('count', 0) or 0)
+                        elif isinstance(views_data, (int, str)):
+                            views = int(views_data) if str(views_data).isdigit() else 0
                         
                         # Get tweet text
-                        tweet_text = tweet_data.get('text', '')
+                        if not tweet_text:
+                            tweet_text = tweet_data.get('text', '')
                         
                         # Get author info
                         user_data = tweet_data.get('user', {})
-                        author_name = user_data.get('screen_name', username) or username
+                        if user_data:
+                            author_name = user_data.get('screen_name', username) or username
                         
                         # Get media/thumbnail
-                        media_list = tweet_data.get('mediaDetails', []) or tweet_data.get('entities', {}).get('media', [])
+                        media_list = tweet_data.get('mediaDetails', []) or tweet_data.get('photos', []) or tweet_data.get('entities', {}).get('media', [])
                         if media_list and len(media_list) > 0:
-                            thumbnail_url = media_list[0].get('media_url_https', '') or media_list[0].get('media_url', '')
+                            thumbnail_url = media_list[0].get('media_url_https', '') or media_list[0].get('url', '')
                         
-                        # If no media, try user profile pic
-                        if not thumbnail_url:
-                            thumbnail_url = user_data.get('profile_image_url_https', '')
+                        # Video thumbnail
+                        if not thumbnail_url and tweet_data.get('video'):
+                            video = tweet_data.get('video', {})
+                            thumbnail_url = video.get('poster', '')
                         
-                        logger.info(f"Twitter syndication API: {likes:,} likes, {retweets:,} retweets, {replies:,} replies")
-                    except json.JSONDecodeError:
-                        logger.warning("Twitter syndication returned non-JSON")
+                        # User profile pic as fallback
+                        if not thumbnail_url and user_data:
+                            thumbnail_url = user_data.get('profile_image_url_https', '').replace('_normal', '')
+                        
+                        if likes > 0 or retweets > 0:
+                            logger.info(f"Twitter syndication: {likes:,} likes, {retweets:,} retweets, {replies:,} replies, {views:,} views")
+                    except (json.JSONDecodeError, ValueError) as e:
+                        logger.warning(f"Twitter syndication JSON error: {e}")
             except Exception as e:
                 logger.warning(f"Twitter syndication API failed: {e}")
             
-            # METHOD 2: Fallback to page scraping if syndication failed
+            # METHOD 3: Try Nitter instances (public Twitter mirrors)
+            if likes == 0 and retweets == 0:
+                nitter_instances = [
+                    'nitter.poast.org',
+                    'nitter.privacydev.net', 
+                    'nitter.1d4.us',
+                ]
+                
+                for nitter in nitter_instances:
+                    try:
+                        nitter_url = f'https://{nitter}/{username}/status/{tweet_id}'
+                        nitter_response = requests.get(nitter_url, timeout=10, headers={
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                        })
+                        
+                        if nitter_response.status_code == 200:
+                            soup = BeautifulSoup(nitter_response.text, 'html.parser')
+                            
+                            # Nitter shows stats in specific elements
+                            # Format: <span class="tweet-stat">123</span>
+                            stats = soup.find_all(class_='tweet-stat')
+                            
+                            # Also try icon-based stats
+                            for stat in soup.find_all(class_='icon-container'):
+                                stat_text = stat.get_text(strip=True)
+                                if stat_text:
+                                    num = WebScraper._parse_count(stat_text)
+                                    icon = stat.find('svg') or stat.find('use')
+                                    if icon:
+                                        icon_href = icon.get('href', '') or icon.get('xlink:href', '') or ''
+                                        if 'heart' in icon_href or 'like' in icon_href:
+                                            likes = max(likes, num)
+                                        elif 'retweet' in icon_href or 'repeat' in icon_href:
+                                            retweets = max(retweets, num)
+                                        elif 'comment' in icon_href or 'reply' in icon_href:
+                                            replies = max(replies, num)
+                            
+                            # Get tweet content
+                            content_div = soup.find(class_='tweet-content')
+                            if content_div and not tweet_text:
+                                tweet_text = content_div.get_text(strip=True)
+                            
+                            # Get image
+                            img = soup.find(class_='still-image') or soup.find('img', class_='media')
+                            if img and not thumbnail_url:
+                                thumbnail_url = img.get('src', '')
+                                if thumbnail_url and not thumbnail_url.startswith('http'):
+                                    thumbnail_url = f'https://{nitter}{thumbnail_url}'
+                            
+                            if likes > 0 or retweets > 0:
+                                logger.info(f"Nitter ({nitter}): {likes:,} likes, {retweets:,} retweets")
+                                break
+                    except Exception as e:
+                        logger.warning(f"Nitter {nitter} failed: {e}")
+                        continue
+            
+            # METHOD 4: Direct page scraping with bot user agents
             if likes == 0 and retweets == 0:
                 headers_list = [
-                    {
-                        'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
-                        'Accept': '*/*',
-                    },
-                    {
-                        'User-Agent': 'Twitterbot/1.0',
-                        'Accept': 'text/html',
-                    },
-                    WebScraper.get_headers()
+                    {'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)'},
+                    {'User-Agent': 'Twitterbot/1.0'},
+                    {'User-Agent': 'Googlebot/2.1 (+http://www.google.com/bot.html)'},
                 ]
                 
                 for headers in headers_list:
@@ -426,53 +521,50 @@ class WebScraper:
                         response = requests.get(tweet_url, headers=headers, timeout=15)
                         if response.status_code == 200:
                             soup = BeautifulSoup(response.text, 'html.parser')
+                            page_text = response.text
                             
                             # Extract from meta tags
-                            og_title = soup.find('meta', property='og:title')
+                            og_image = soup.find('meta', property='og:image') or soup.find('meta', attrs={'name': 'twitter:image'})
+                            if og_image and not thumbnail_url:
+                                thumbnail_url = og_image.get('content', '')
+                            
                             og_desc = soup.find('meta', property='og:description')
-                            og_image = soup.find('meta', property='og:image')
+                            if og_desc and not tweet_text:
+                                desc = og_desc.get('content', '')
+                                tweet_text = re.sub(r'^.*? on (Twitter|X):\s*["\']?', '', desc, flags=re.IGNORECASE)
+                                tweet_text = tweet_text.strip('"\'')
                             
-                            if not og_image:
-                                og_image = soup.find('meta', attrs={'name': 'twitter:image'})
+                            # Try to find engagement in page (rare but possible)
+                            engagement_patterns = [
+                                (r'(\d[\d,]*)\s*(?:Likes?|likes?)', 'likes'),
+                                (r'(\d[\d,]*)\s*(?:Retweets?|retweets?|Reposts?|reposts?)', 'retweets'),
+                                (r'(\d[\d,]*)\s*(?:Replies?|replies?|Comments?|comments?)', 'replies'),
+                                (r'(\d[\d,]*)\s*(?:Views?|views?)', 'views'),
+                            ]
                             
-                            title_text = og_title.get('content', '') if og_title else ''
-                            desc_text = og_desc.get('content', '') if og_desc else ''
+                            for pattern, metric in engagement_patterns:
+                                match = re.search(pattern, page_text)
+                                if match:
+                                    num = int(match.group(1).replace(',', ''))
+                                    if metric == 'likes' and num > likes:
+                                        likes = num
+                                    elif metric == 'retweets' and num > retweets:
+                                        retweets = num
+                                    elif metric == 'replies' and num > replies:
+                                        replies = num
+                                    elif metric == 'views' and num > views:
+                                        views = num
                             
-                            if not thumbnail_url:
-                                thumbnail_url = og_image.get('content', '') if og_image else ''
-                            
-                            # Get tweet text from meta
-                            if not tweet_text:
-                                tweet_text = desc_text or title_text
-                                if tweet_text:
-                                    tweet_text = re.sub(r'^.*? on (Twitter|X):\s*["\']?', '', tweet_text, flags=re.IGNORECASE)
-                                    tweet_text = tweet_text.strip('"\'')
-                            
-                            # Combine title and description for parsing engagement
-                            all_text = f"{title_text} {desc_text}"
-                            
-                            # Parse engagement from meta tags (fallback)
-                            if likes == 0:
-                                abbrev_likes = re.search(r'([\d.]+)\s*([KMB])\s*likes?', all_text, re.IGNORECASE)
-                                if abbrev_likes:
-                                    num = float(abbrev_likes.group(1))
-                                    suffix = abbrev_likes.group(2).upper()
-                                    multiplier = {'K': 1000, 'M': 1000000, 'B': 1000000000}.get(suffix, 1)
-                                    likes = int(num * multiplier)
-                                else:
-                                    exact_likes = re.search(r'([\d,]+)\s*likes?', all_text, re.IGNORECASE)
-                                    if exact_likes:
-                                        likes_str = exact_likes.group(1).replace(',', '')
-                                        if likes_str.isdigit():
-                                            likes = int(likes_str)
-                            
-                            if likes > 0 or thumbnail_url:
+                            if thumbnail_url:
                                 break
                     except Exception as e:
                         logger.warning(f"Twitter page scrape failed: {e}")
                         continue
             
-            logger.info(f"Twitter scrape: @{author_name} - {likes:,} likes, {replies:,} replies, {retweets:,} retweets")
+            # Add quotes to retweets total
+            total_shares = retweets + quotes
+            
+            logger.info(f"Twitter final: @{author_name} - {likes:,} likes, {replies:,} replies, {total_shares:,} retweets, {views:,} views, {bookmarks:,} bookmarks")
             
             return {
                 'id': tweet_id,
@@ -486,8 +578,9 @@ class WebScraper:
                 'engagement': {
                     'likes': likes,
                     'comments': replies,
-                    'shares': retweets,
-                    'views': views
+                    'shares': total_shares,
+                    'views': views,
+                    'bookmarks': bookmarks
                 }
             }
             

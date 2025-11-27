@@ -31,7 +31,8 @@ import {
   Loader,
   Link as LinkIcon,
   Globe,
-  Wallet
+  Wallet,
+  Bookmark
 } from 'lucide-react'
 import { useWallet } from '../contexts/WalletContext'
 import { socialMediaService, SocialMediaContent } from '../services/socialMediaService'
@@ -668,6 +669,7 @@ const MultiPlatformTokenization: React.FC = () => {
                     Content Performance
                   </h4>
                   <div className={`grid gap-3 ${
+                    scrapedContent.engagement.bookmarks > 0 ? 'grid-cols-5' :
                     (scrapedContent.engagement.views > 0 && scrapedContent.engagement.shares > 0) ? 'grid-cols-4' :
                     (scrapedContent.engagement.views > 0 || scrapedContent.engagement.shares > 0) ? 'grid-cols-3' : 'grid-cols-2'
                   }`}>
@@ -732,6 +734,22 @@ const MultiPlatformTokenization: React.FC = () => {
                         <div className="text-[10px] text-emerald-300 font-semibold uppercase tracking-widest">
                           {scrapedContent.platform === 'twitter' ? 'Reposts' : 'Shares'}
                         </div>
+                      </motion.div>
+                    )}
+                    
+                    {/* Bookmarks Card - Only for Twitter */}
+                    {scrapedContent.engagement.bookmarks > 0 && (
+                      <motion.div 
+                        className="p-4 bg-gradient-to-br from-amber-500/20 to-orange-600/10 rounded-2xl border border-amber-500/30 text-center"
+                        whileHover={{ scale: 1.03, y: -2 }}
+                      >
+                        <div className="w-10 h-10 mx-auto mb-2 bg-amber-500/20 rounded-xl flex items-center justify-center">
+                          <Bookmark className="w-5 h-5 text-amber-400" />
+                        </div>
+                        <div className="text-2xl font-black text-white mb-0.5">
+                          {scrapedContent.engagement.bookmarks.toLocaleString()}
+                        </div>
+                        <div className="text-[10px] text-amber-300 font-semibold uppercase tracking-widest">Bookmarks</div>
                       </motion.div>
                     )}
                   </div>

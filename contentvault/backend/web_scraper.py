@@ -704,12 +704,20 @@ class WebScraper:
                         # Try to find reactions in rendered HTML (may not work without JS)
                         page_text = response.text
                         
+                        # Log some of the page content for debugging
+                        logger.info(f"LinkedIn page title: {og_title[:100] if og_title else 'None'}")
+                        
                         # Look for reactions in the HTML (LinkedIn shows them as plain numbers)
-                        # Pattern: look for standalone numbers near "reactions" or "likes"
+                        # LinkedIn format: "317 reactions" or just "317" followed by comments section
+                        # Sometimes in format: "317 `` `` `` 30 Comments"
                         reaction_patterns = [
                             r'>\s*([\d,]+)\s*<[^>]*>\s*(?:reactions?|likes?)',  # >317< reactions
-                            r'([\d,]+)\s*(?:reactions?|likes?)',  # 317 reactions
+                            r'([\d,]+)\s+(?:reactions?|likes?)',  # 317 reactions
                             r'([\d,.]+)\s*([KMB])\s*(?:reactions?|likes?)',  # 1.2K reactions
+                            r'"numLikes":\s*(\d+)',  # JSON format
+                            r'"reactionCount":\s*(\d+)',  # Alternative JSON
+                            r'data-num-likes="(\d+)"',  # data attribute
+                            r'socialActivityCount[^>]*>\s*(\d+)',  # social activity count
                         ]
                         
                         for pattern in reaction_patterns:
@@ -725,7 +733,7 @@ class WebScraper:
                                     else:
                                         likes = int(num)
                                     if likes > 0:
-                                        logger.info(f"LinkedIn found reactions: {match.group(0)} -> {likes:,}")
+                                        logger.info(f"LinkedIn found reactions: {match.group(0).strip()} -> {likes:,}")
                                         break
                         
                         # Comments - LinkedIn format: "| 30 comments on LinkedIn"
@@ -751,19 +759,31 @@ class WebScraper:
                                         logger.info(f"LinkedIn found comments: {match.group(0).strip()} -> {comments:,}")
                                         break
                         
-                        # Reposts/Shares
+                        # Reposts/Shares - LinkedIn shows these in various formats
+                        # Combined search text for better matching
+                        search_text = f"{all_text} {page_text}"
+                        
                         share_patterns = [
-                            r'([\d,]+)\s*([KMB])?\s*reposts?',
-                            r'([\d,]+)\s*([KMB])?\s*shares?',
-                            r'>\s*([\d,]+)\s*<[^>]*>\s*(?:reposts?|shares?)',
+                            r'(\d+)\s*repost',  # "1 repost" (singular)
+                            r'([\d,]+)\s*reposts',  # "5 reposts" (plural)  
+                            r'([\d,]+)\s*([KMB])\s*reposts?',  # "1K reposts"
+                            r'([\d,]+)\s*shares?',  # "30 shares"
+                            r'([\d,]+)\s*([KMB])\s*shares?',  # "1K shares"
+                            r'>\s*(\d+)\s*<[^>]*>[^<]*(?:repost|share)',  # >1< ...repost
+                            r'reposts?[^<]*>\s*(\d+)',  # reposts>1
+                            r'data-[^=]*="\d*"[^>]*>\s*(\d+)\s*<',  # data attributes with counts
                         ]
                         
                         for pattern in share_patterns:
-                            match = re.search(pattern, page_text, re.IGNORECASE)
+                            match = re.search(pattern, search_text, re.IGNORECASE)
                             if match:
-                                num_str = match.group(1).replace(',', '')
-                                suffix = match.group(2).upper() if len(match.groups()) > 1 and match.group(2) else ''
-                                if num_str.replace('.', '').isdigit():
+                                # Find the number group (could be group 1 or last group depending on pattern)
+                                num_str = match.group(1).replace(',', '') if match.group(1) else ''
+                                suffix = ''
+                                if len(match.groups()) > 1 and match.group(2) and match.group(2).upper() in 'KMB':
+                                    suffix = match.group(2).upper()
+                                
+                                if num_str and num_str.replace('.', '').isdigit():
                                     num = float(num_str)
                                     if suffix:
                                         multiplier = {'K': 1000, 'M': 1000000, 'B': 1000000000}.get(suffix, 1)
@@ -771,7 +791,7 @@ class WebScraper:
                                     else:
                                         shares = int(num)
                                     if shares > 0:
-                                        logger.info(f"LinkedIn found shares: {match.group(0)} -> {shares:,}")
+                                        logger.info(f"LinkedIn found shares/reposts: {match.group(0).strip()} -> {shares:,}")
                                         break
                         
                         if likes > 0 or comments > 0 or thumbnail_url:

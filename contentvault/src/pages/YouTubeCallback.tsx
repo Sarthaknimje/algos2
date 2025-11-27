@@ -53,10 +53,13 @@ const YouTubeCallback: React.FC = () => {
           id: result.channel_id
         })
         
-        // Redirect to launchpad after 3 seconds
+        // Clear URL params and redirect to profile after 2 seconds
         setTimeout(() => {
-          navigate('/launchpad')
-        }, 3000)
+          window.history.replaceState({}, document.title, '/profile')
+          navigate('/profile', { replace: true })
+          // Force page reload to refresh YouTube data
+          window.location.reload()
+        }, 2000)
       } else {
         setStatus('error')
         setMessage(result.error || 'Failed to connect YouTube channel')

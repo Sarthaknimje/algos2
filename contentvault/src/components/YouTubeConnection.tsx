@@ -49,6 +49,51 @@ const YouTubeConnection: React.FC<YouTubeConnectionProps> = ({
   const checkConnection = async () => {
     try {
       setIsLoading(true)
+      
+      // First check backend session (persistent cookie)
+      try {
+        const statusResponse = await fetch('http://localhost:5001/auth/youtube/status', {
+          method: 'GET',
+          credentials: 'include' // Include cookies
+        })
+        
+        if (statusResponse.ok) {
+          const statusData = await statusResponse.json()
+          if (statusData.success && statusData.authenticated) {
+            // Fetch full channel data from YouTube API using backend
+            const channelResponse = await fetch('http://localhost:5001/auth/youtube/channel', {
+              method: 'GET',
+              credentials: 'include'
+            })
+            
+            if (channelResponse.ok) {
+              const channelData = await channelResponse.json()
+              if (channelData.success && channelData.channel) {
+                const realChannel: YouTubeChannel = {
+                  id: channelData.channel.id,
+                  title: channelData.channel.title,
+                  description: channelData.channel.description || '',
+                  thumbnailUrl: channelData.channel.thumbnailUrl || '',
+                  subscriberCount: channelData.channel.subscribers?.toString() || '0',
+                  videoCount: channelData.channel.videoCount?.toString() || '0',
+                  viewCount: channelData.channel.viewCount?.toString() || '0',
+                  customUrl: channelData.channel.customUrl
+                }
+                setChannel(realChannel)
+                setIsConnected(true)
+                if (onChannelConnected) {
+                  onChannelConnected(realChannel)
+                }
+                return // Successfully connected via backend
+              }
+            }
+          }
+        }
+      } catch (backendError) {
+        console.warn('Backend session check failed, trying localStorage:', backendError)
+      }
+      
+      // Fallback to localStorage (for backward compatibility)
       const authState = localStorage.getItem('youtube_auth_state')
       if (authState) {
         const parsed = JSON.parse(authState)
@@ -113,24 +158,38 @@ const YouTubeConnection: React.FC<YouTubeConnectionProps> = ({
   const handleConnect = async () => {
     setIsConnecting(true)
     try {
-      // Redirect to YouTube OAuth
-      const clientId = '368520223360-5cb7qp7jdneaujvnm0hoj7mug4ljo7mv.apps.googleusercontent.com'
-      const redirectUri = window.location.origin + '/youtube-callback'
-      const scope = 'https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl'
-      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent`
+      // Use backend OAuth flow
+      const response = await fetch('http://localhost:5001/auth/youtube', {
+        method: 'GET',
+        credentials: 'include'
+      })
       
-      window.location.href = authUrl
+      const data = await response.json()
+      
+      if (data.success && data.auth_url) {
+        // Redirect to the auth URL from backend
+        window.location.href = data.auth_url
+      } else {
+        throw new Error(data.error || 'Failed to get auth URL')
+      }
     } catch (err) {
       console.error('Connection failed:', err)
-      setError('Failed to connect to YouTube')
-    } finally {
+      setError('Failed to connect to YouTube. Please try again.')
       setIsConnecting(false)
     }
   }
 
   const handleDisconnect = async () => {
     try {
+      // Clear backend session
+      await fetch('http://localhost:5001/auth/youtube/disconnect', {
+        method: 'POST',
+        credentials: 'include'
+      }).catch(() => {}) // Ignore errors
+      
+      // Clear localStorage (backward compatibility)
       localStorage.removeItem('youtube_auth_state')
+      
       setIsConnected(false)
       setChannel(null)
       setError(null)

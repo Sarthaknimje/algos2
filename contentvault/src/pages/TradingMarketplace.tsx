@@ -20,7 +20,9 @@ import {
   Star,
   Eye,
   Heart,
-  Share2
+  Share2,
+  Wallet,
+  Sparkles
 } from 'lucide-react'
 import { 
   LineChart as RechartsLine, 
@@ -34,7 +36,15 @@ import {
   AreaChart
 } from 'recharts'
 import { useWallet } from '../contexts/WalletContext'
-import { PeraWalletIcon } from '../assets/icons'
+import { PeraWalletIcon, YouTubeIcon, InstagramIcon, TwitterIcon, LinkedInIcon } from '../assets/icons'
+import { asaTradingService } from '../services/asaTradingService'
+import { TradingService, TradeEstimate } from '../services/tradingService'
+import { createASAWithPera, transferASAWithPera, sendAlgoPaymentWithPera } from '../services/peraWalletService'
+import TradeSuccessModal from '../components/TradeSuccessModal'
+import ConfettiAnimation from '../components/ConfettiAnimation'
+import BondingCurveChart from '../components/BondingCurveChart'
+import SVGBackground from '../components/SVGBackground'
+import PremiumBackground from '../components/PremiumBackground'
 
 interface TradeData {
   type: 'buy' | 'sell'
@@ -72,7 +82,7 @@ interface CreatorToken {
 const TradingMarketplace: React.FC = () => {
   const { symbol } = useParams<{ symbol: string }>()
   const navigate = useNavigate()
-  const { isConnected, address, balance, connectWallet, isLoading } = useWallet()
+  const { isConnected, address, balance, connectWallet, peraWallet, isLoading } = useWallet()
   
   const [activeTab, setActiveTab] = useState<'buy' | 'sell'>('buy')
   const [orderType, setOrderType] = useState<'market' | 'limit'>('market')
@@ -91,6 +101,15 @@ const TradingMarketplace: React.FC = () => {
   const [loadingToken, setLoadingToken] = useState(true)
   const [userTokenBalance, setUserTokenBalance] = useState(0) // User's token balance
   const [userAlgoBalance, setUserAlgoBalance] = useState(0) // User's ALGO balance
+  const [showSuccessModal, setShowSuccessModal] = useState(false)
+  const [successTradeData, setSuccessTradeData] = useState<{
+    tradeType: 'buy' | 'sell'
+    amount: number
+    price: number
+    totalAlgo: number
+    transactionId: string
+  } | null>(null)
+  const [tradeError, setTradeError] = useState<string | null>(null)
   
   // Fetch real token data from backend
   useEffect(() => {
@@ -102,36 +121,29 @@ const TradingMarketplace: React.FC = () => {
         
         if (result.success) {
           // Find token by symbol
-          const token = result.tokens.find((t: any) => t.token_symbol.trim() === symbol)
-          if (token) {
-            // Add calculated fields for UI compatibility
+          const token = result.tokens.find((t: any) => t.token_symbol?.trim().toUpperCase() === symbol?.toUpperCase())
+          if (token && token.asa_id) {
+            // Fetch detailed token info including bonding curve
+            const tokenDetails = await TradingService.getTokenDetails(token.asa_id)
             const enhancedToken = {
               ...token,
-              high24h: token.current_price * 1.05, // Calculate 24h high
-              low24h: token.current_price * 0.95,   // Calculate 24h low
+              ...tokenDetails,
+              high24h: token.current_price * 1.05,
+              low24h: token.current_price * 0.95,
               volume24h: token.volume_24h || 0,
-              marketCap: token.market_cap || (token.current_price * token.total_supply) // Real market cap
+              marketCap: token.market_cap || (token.current_price * token.total_supply),
+              // Parse bonding curve if available
+              bonding_curve_config: tokenDetails?.bonding_curve_config || null,
+              bonding_curve_state: tokenDetails?.bonding_curve_state || null
             }
             setTokenData(enhancedToken)
             setCurrentPrice(token.current_price)
-            setPriceChange24h(token.price_change_24h)
+            setPriceChange24h(token.price_change_24h || 0)
+            
+            // Fetch real trade history for chart
+            fetchTradeHistory(token.asa_id)
           } else {
             console.error('Token not found:', symbol)
-            // Fallback to mock data if token not found
-            setTokenData({
-              symbol: symbol || 'TECH',
-              name: 'Creator Token',
-              asa_id: 0,
-              current_price: currentPrice,
-              price_change_24h: priceChange24h,
-              market_cap: currentPrice * 1000000, // Real calculated market cap
-              volume_24h: 15000,
-              holders: 1250,
-              high24h: currentPrice * 1.05,
-              low24h: currentPrice * 0.95,
-              volume24h: 15000,
-              marketCap: currentPrice * 1000000 // Real calculated market cap
-            })
           }
         } else {
           console.error('Failed to fetch tokens:', result.error)
@@ -148,6 +160,49 @@ const TradingMarketplace: React.FC = () => {
     }
   }, [symbol])
 
+  // Fetch real trade history for charts
+  const fetchTradeHistory = async (asaId: number) => {
+    try {
+      const trades = await TradingService.getTradeHistory(asaId, '24h', 200)
+      
+      // Convert trades to chart data
+      const chartDataPoints: ChartDataPoint[] = trades.map((trade: any) => {
+        const date = new Date(trade.timestamp)
+        return {
+          time: `${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`,
+          price: trade.price,
+          timestamp: new Date(trade.timestamp).getTime()
+        }
+      })
+      
+      // Sort by timestamp
+      chartDataPoints.sort((a, b) => a.timestamp - b.timestamp)
+      
+      // If no trades, create initial point from current price
+      if (chartDataPoints.length === 0 && tokenData) {
+        chartDataPoints.push({
+          time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+          price: tokenData.current_price,
+          timestamp: Date.now()
+        })
+      }
+      
+      setChartData(chartDataPoints)
+      
+      // Update recent trades list
+      const recentTrades: TradeData[] = trades.slice(0, 20).map((trade: any) => ({
+        type: trade.type as 'buy' | 'sell',
+        price: trade.price,
+        amount: trade.amount,
+        total: trade.price * trade.amount,
+        timestamp: new Date(trade.timestamp).getTime()
+      }))
+      setTrades(recentTrades)
+    } catch (error) {
+      console.error('Error fetching trade history:', error)
+    }
+  }
+
   // Initialize user balances when wallet connects
   useEffect(() => {
     if (isConnected && balance) {
@@ -156,60 +211,39 @@ const TradingMarketplace: React.FC = () => {
     }
   }, [isConnected, balance])
 
-  // Initialize chart data
+  // Refresh data periodically
   useEffect(() => {
-    const initialData: ChartDataPoint[] = []
-    const now = Date.now()
-    const basePrice = 0.025
+    if (!tokenData?.asa_id) return
     
-    for (let i = 100; i >= 0; i--) {
-      const timestamp = now - i * 60000
-      const date = new Date(timestamp)
-      const variation = (Math.random() - 0.5) * 0.005
-      const price = basePrice + variation
-      
-      initialData.push({
-        time: `${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`,
-        price: price,
-        timestamp: timestamp
-      })
-    }
-    
-    setChartData(initialData)
-    setCurrentPrice(initialData[initialData.length - 1].price)
-  }, [])
-
-  // Simulate real-time price updates
-  useEffect(() => {
     const interval = setInterval(() => {
-      setCurrentPrice(prev => {
-        const change = (Math.random() - 0.5) * 0.001
-        const newPrice = Math.max(0.001, prev + change)
-        
-        // Update chart data
-        setChartData(prevData => {
-          const now = Date.now()
-          const date = new Date(now)
-          const newPoint = {
-            time: `${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`,
-            price: newPrice,
-            timestamp: now
-          }
-          const updated = [...prevData, newPoint]
-          return updated.slice(-100)
-        })
-        
-        return newPrice
-      })
-      
-      setPriceChange24h(prev => {
-        const newChange = prev + (Math.random() - 0.5) * 0.5
-        return Math.max(-50, Math.min(50, newChange))
-      })
-    }, 3000)
+      // Refresh token data
+      fetchTokenData()
+      // Refresh trade history
+      fetchTradeHistory(tokenData.asa_id)
+    }, 10000) // Every 10 seconds
 
     return () => clearInterval(interval)
-  }, [])
+  }, [tokenData?.asa_id])
+  
+  const fetchTokenData = async () => {
+    if (!symbol) return
+    try {
+      const response = await fetch('http://localhost:5001/tokens')
+      const result = await response.json()
+      if (result.success) {
+        const token = result.tokens.find((t: any) => t.token_symbol?.trim().toUpperCase() === symbol?.toUpperCase())
+        if (token) {
+          setCurrentPrice(token.current_price)
+          setPriceChange24h(token.price_change_24h || 0)
+          if (tokenData) {
+            setTokenData({ ...tokenData, ...token })
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error refreshing token data:', error)
+    }
+  }
   
   // Initialize order book
   useEffect(() => {
@@ -261,6 +295,36 @@ const TradingMarketplace: React.FC = () => {
     setTrades(recentTrades)
   }, [])
 
+  const [tradeEstimate, setTradeEstimate] = useState<TradeEstimate | null>(null)
+  const [estimating, setEstimating] = useState(false)
+
+  // Estimate trade when amount changes
+  useEffect(() => {
+    if (!tokenData?.asa_id || !amount || parseFloat(amount) <= 0) {
+      setTradeEstimate(null)
+      return
+    }
+
+    const estimateTrade = async () => {
+      setEstimating(true)
+      try {
+        const tokenAmount = parseFloat(amount)
+        const estimate = activeTab === 'buy'
+          ? await TradingService.estimateBuy(tokenData.asa_id, tokenAmount)
+          : await TradingService.estimateSell(tokenData.asa_id, tokenAmount)
+        setTradeEstimate(estimate)
+      } catch (error) {
+        console.error('Error estimating trade:', error)
+        setTradeEstimate(null)
+      } finally {
+        setEstimating(false)
+      }
+    }
+
+    const timeoutId = setTimeout(estimateTrade, 500) // Debounce
+    return () => clearTimeout(timeoutId)
+  }, [amount, activeTab, tokenData?.asa_id])
+
   const handleTrade = async () => {
     if (!isConnected) {
       connectWallet()
@@ -268,81 +332,179 @@ const TradingMarketplace: React.FC = () => {
     }
 
     if (!amount || parseFloat(amount) <= 0) {
-      alert('Please enter a valid amount')
+      setTradeError('Please enter a valid amount')
       return
     }
 
-    if (orderType === 'limit' && (!price || parseFloat(price) <= 0)) {
-      alert('Please enter a valid price for limit order')
+    if (!tokenData?.asa_id) {
+      setTradeError('Token data not loaded')
       return
     }
 
-    // Check if user has enough balance
+    if (!peraWallet) {
+      setTradeError('Pera Wallet not connected. Please connect your wallet first.')
+      return
+    }
+
     const tradeAmount = parseFloat(amount)
-    const tradePrice = orderType === 'market' ? currentPrice : parseFloat(price)
-    const totalCost = tradeAmount * tradePrice
+    
+    // Validate trade amount
+    if (isNaN(tradeAmount) || tradeAmount <= 0) {
+      setTradeError('Please enter a valid amount greater than 0')
+      setIsProcessing(false)
+      return
+    }
+    
+    const estimate = activeTab === 'buy'
+      ? await TradingService.estimateBuy(tokenData.asa_id, tradeAmount)
+      : await TradingService.estimateSell(tokenData.asa_id, tradeAmount)
 
-    if (activeTab === 'buy' && totalCost > userAlgoBalance) {
-      alert(`❌ Insufficient ALGO balance!\nYou need ${totalCost.toFixed(4)} ALGO but only have ${userAlgoBalance.toFixed(4)} ALGO`)
+    // Validate estimate
+    if (!estimate) {
+      setTradeError('Failed to get trade estimate. Please try again.')
+      setIsProcessing(false)
       return
     }
 
-    if (activeTab === 'sell' && tradeAmount > userTokenBalance) {
-      alert(`❌ Insufficient token balance!\nYou want to sell ${tradeAmount} ${tokenData.symbol} but only have ${userTokenBalance.toFixed(2)} ${tokenData.symbol}`)
-      return
+    // Check balances (including minimum balance requirement)
+    if (activeTab === 'buy') {
+      if (!estimate.algo_cost || estimate.algo_cost <= 0) {
+        setTradeError(`Invalid trade estimate. Cost: ${estimate.algo_cost || 'N/A'} ALGO. Please try again.`)
+        setIsProcessing(false)
+        return
+      }
+      
+      // Algorand requires minimum balance: 0.1 ALGO base + 0.1 ALGO per asset + 0.001 ALGO transaction fee
+      // Estimate: assume user has ~18 assets, so need ~1.8 ALGO minimum + transaction fee
+      const estimatedMinBalance = 1.9 // Conservative estimate
+      const totalNeeded = estimate.algo_cost + estimatedMinBalance
+      
+      if (totalNeeded > userAlgoBalance) {
+        setTradeError(
+          `Insufficient ALGO balance! You need ${estimate.algo_cost.toFixed(4)} ALGO for the trade ` +
+          `plus ~${estimatedMinBalance.toFixed(2)} ALGO for minimum balance requirements. ` +
+          `Total needed: ${totalNeeded.toFixed(4)} ALGO, but you only have ${userAlgoBalance.toFixed(4)} ALGO.`
+        )
+        setIsProcessing(false)
+        return
+      }
+    } else {
+      if (tradeAmount > userTokenBalance) {
+        setTradeError(`Insufficient token balance! You want to sell ${tradeAmount} ${tokenData.token_symbol} but only have ${userTokenBalance.toFixed(2)}`)
+        setIsProcessing(false)
+        return
+      }
+      
+      if (!estimate.algo_received || estimate.algo_received <= 0) {
+        setTradeError(`Invalid sell estimate. You would receive: ${estimate.algo_received || 'N/A'} ALGO. Please try again.`)
+        setIsProcessing(false)
+        return
+      }
     }
 
     setIsProcessing(true)
+    setTradeError(null)
 
     try {
-      // Call backend to execute real smart contract trade
-      const response = await fetch('http://localhost:5001/trade-token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          asa_id: tokenData.asa_id,
-          trade_type: activeTab, // 'buy' or 'sell'
-          amount: Math.floor(tradeAmount), // Convert to integer tokens
-          price: tradePrice,
-          trader_address: address // Add the user's wallet address
-        })
-      })
-      
-      const result = await response.json()
-      
-      if (result.success) {
-        // Create trade record for UI
-        const newTrade: TradeData = {
-          type: activeTab,
-          price: tradePrice,
-          amount: tradeAmount,
-          total: tradePrice * tradeAmount,
-          timestamp: Date.now()
-        }
+      const assetId = tokenData.asa_id
+      let txId: string
+      let finalPrice = estimate.new_price
 
-        setTrades(prev => [newTrade, ...prev.slice(0, 19)])
-        setAmount('')
-        setPrice('')
-        
-        // Update user balances based on trade
-        if (activeTab === 'buy') {
-          setUserTokenBalance(prev => prev + tradeAmount)
-          setUserAlgoBalance(prev => prev - (tradePrice * tradeAmount))
-        } else {
-          setUserTokenBalance(prev => prev - tradeAmount)
-          setUserAlgoBalance(prev => prev + (tradePrice * tradeAmount))
+      if (activeTab === 'buy') {
+        // Send ALGO payment first
+        const algoAmount = estimate.algo_cost
+        if (!algoAmount || algoAmount <= 0) {
+          setTradeError(`Invalid trade amount. Estimated cost: ${algoAmount || 'N/A'} ALGO. Please try again.`)
+          setIsProcessing(false)
+          return
         }
         
-        // Success message with transaction details
-        alert(`🎉 ${activeTab === 'buy' ? 'Buy' : 'Sell'} order executed successfully!\n\n📊 Details:\n• Amount: ${tradeAmount} ${tokenData.symbol} tokens\n• Price: $${tradePrice.toFixed(4)} ALGO\n• Total: $${(tradePrice * tradeAmount).toFixed(4)} ALGO\n• Transaction ID: ${result.data.transaction_id}\n• Confirmed in round: ${result.data.confirmed_round}\n\n✅ Transaction confirmed on Algorand blockchain!`)
+        txId = await sendAlgoPaymentWithPera({
+          sender: address!,
+          peraWallet: peraWallet,
+          receiver: tokenData.creator || address!, // Send to creator or self
+          amount: algoAmount
+        })
+        
+        // Then receive tokens (in real implementation, this would be atomic)
+        // For now, we'll use the bonding curve endpoint which handles the logic
+        const result = await TradingService.executeBuy(
+          assetId,
+          tradeAmount,
+          address!,
+          txId
+        )
+        
+        if (!result.success) {
+          throw new Error(result.error || 'Buy failed')
+        }
+        
+        finalPrice = result.new_price
+        
+        // Transfer tokens to user (simplified - in production this would be handled by smart contract)
+        try {
+          await transferASAWithPera({
+            sender: address!,
+            peraWallet: peraWallet,
+            receiver: address!,
+            assetId: assetId,
+            amount: Math.floor(tradeAmount)
+          })
+        } catch (transferError) {
+          console.warn('Token transfer may have failed:', transferError)
+        }
       } else {
-        alert(`❌ Trade failed: ${result.error}`)
+        // Sell: transfer tokens first
+        txId = await transferASAWithPera({
+          sender: address!,
+          peraWallet: peraWallet,
+          receiver: tokenData.creator || address!,
+          assetId: assetId,
+          amount: Math.floor(tradeAmount)
+        })
+        
+        // Then execute sell on bonding curve
+        const result = await TradingService.executeSell(
+          assetId,
+          tradeAmount,
+          address!,
+          txId
+        )
+        
+        if (!result.success) {
+          throw new Error(result.error || 'Sell failed')
+        }
+        
+        finalPrice = result.new_price
+        
+        // Receive ALGO (in production, this would be automatic)
+        if (result.algo_received) {
+          // ALGO would be sent automatically in a real DEX
+          console.log(`Would receive ${result.algo_received} ALGO`)
+        }
       }
-    } catch (error) {
+
+      // Update current price
+      setCurrentPrice(finalPrice)
+
+      // Refresh token data and trade history
+      await fetchTokenData()
+      await fetchTradeHistory(assetId)
+
+      // Show success modal with confetti
+      setSuccessTradeData({
+        tradeType: activeTab,
+        amount: Math.floor(tradeAmount),
+        price: finalPrice,
+        totalAlgo: activeTab === 'buy' ? (estimate.algo_cost || 0) : (estimate.algo_received || 0),
+        transactionId: txId
+      })
+      setShowSuccessModal(true)
+      setAmount('')
+      setPrice('')
+    } catch (error: any) {
       console.error('Trade error:', error)
-      alert('❌ Failed to execute trade. Please make sure backend is running and try again.')
+      setTradeError(error.message || 'Failed to execute trade. Please try again.')
     } finally {
       setIsProcessing(false)
     }
@@ -394,48 +556,38 @@ const TradingMarketplace: React.FC = () => {
 
   if (!isConnected) {
     return (
-      <div className="min-h-screen flex items-center justify-center relative overflow-hidden">
-        {/* Animated background */}
-        <div className="absolute inset-0">
-          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl animate-pulse"></div>
-          <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
-        </div>
-
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.9, y: 20 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="text-center relative z-10"
-        >
+      <div className="min-h-screen bg-[#0a0a0f] relative">
+        <PremiumBackground variant="blue" />
+        <div className="relative z-10 flex items-center justify-center min-h-screen">
           <motion.div 
-            className="w-24 h-24 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-2xl"
-            animate={{ 
-              scale: [1, 1.1, 1],
-              rotate: [0, 5, -5, 0]
-            }}
-            transition={{ 
-              duration: 3,
-              repeat: Infinity,
-              ease: "easeInOut"
-            }}
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="text-center p-8"
           >
-            <BarChart3 className="w-12 h-12 text-white" />
+            <motion.div 
+              className="w-24 h-24 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-3xl flex items-center justify-center mx-auto mb-8"
+              animate={{ rotate: [0, 5, -5, 0] }}
+              transition={{ duration: 4, repeat: Infinity }}
+            >
+              <BarChart3 className="w-12 h-12 text-white" />
+            </motion.div>
+            <h2 className="text-4xl font-bold text-white mb-4">Connect Your Wallet</h2>
+            <p className="text-gray-400 mb-8 max-w-md mx-auto text-lg">
+              Connect your Pera wallet to start trading creator tokens and access live market data.
+            </p>
+            <motion.button 
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={connectWallet}
+              disabled={isLoading}
+              className="px-8 py-4 bg-gradient-to-r from-cyan-600 to-blue-600 rounded-2xl text-white font-bold text-lg disabled:opacity-50 flex items-center space-x-3 mx-auto"
+            >
+              <PeraWalletIcon className="w-6 h-6" />
+              <span>{isLoading ? 'Connecting...' : 'Connect Wallet'}</span>
+            </motion.button>
           </motion.div>
-          <h2 className="text-4xl font-bold text-white mb-4">Connect Your Wallet</h2>
-          <p className="text-gray-400 mb-8 max-w-md mx-auto text-lg">
-            Connect your Pera wallet to start trading creator tokens and access live market data.
-          </p>
-          <motion.button 
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={connectWallet}
-            disabled={isLoading}
-            className="btn-primary flex items-center space-x-2 mx-auto disabled:opacity-50 px-8 py-4 text-lg"
-          >
-            <PeraWalletIcon className="w-6 h-6" />
-            <span>{isLoading ? 'Connecting...' : 'Connect Wallet'}</span>
-          </motion.button>
-        </motion.div>
+        </div>
       </div>
     )
   }
@@ -444,10 +596,13 @@ const TradingMarketplace: React.FC = () => {
 
   if (loadingToken) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-white text-lg">Loading token data...</p>
+      <div className="min-h-screen bg-[#0a0a0f] relative">
+        <PremiumBackground variant="blue" />
+        <div className="relative z-10 flex items-center justify-center min-h-screen">
+          <div className="text-center">
+            <div className="w-16 h-16 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-white text-lg">Loading token data...</p>
+          </div>
         </div>
       </div>
     )
@@ -455,54 +610,32 @@ const TradingMarketplace: React.FC = () => {
 
   if (!tokenData) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 bg-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
-            <span className="text-white text-2xl">!</span>
+      <div className="min-h-screen bg-[#0a0a0f] relative">
+        <PremiumBackground variant="blue" />
+        <div className="relative z-10 flex items-center justify-center min-h-screen">
+          <div className="text-center">
+            <div className="w-16 h-16 bg-red-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <span className="text-white text-2xl">!</span>
+            </div>
+            <p className="text-white text-lg mb-2">Token not found</p>
+            <p className="text-gray-400">Token symbol "{symbol}" does not exist</p>
+            <motion.button 
+              onClick={() => navigate('/marketplace')} 
+              className="mt-4 px-6 py-3 bg-gradient-to-r from-cyan-600 to-blue-600 rounded-xl text-white font-semibold"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              Back to Marketplace
+            </motion.button>
           </div>
-          <p className="text-white text-lg mb-2">Token not found</p>
-          <p className="text-gray-400">Token symbol "{symbol}" does not exist</p>
-          <button 
-            onClick={() => navigate('/creator-marketplace')} 
-            className="mt-4 px-6 py-2 bg-primary-500 hover:bg-primary-600 rounded-lg text-white"
-          >
-            Back to Marketplace
-          </button>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen py-6 relative overflow-hidden">
-      {/* Animated background */}
-      <div className="absolute inset-0 pointer-events-none">
-        <motion.div 
-          className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl"
-          animate={{ 
-            scale: [1, 1.2, 1],
-            opacity: [0.3, 0.5, 0.3]
-          }}
-          transition={{ 
-            duration: 8,
-            repeat: Infinity,
-            ease: "easeInOut"
-          }}
-        />
-        <motion.div 
-          className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl"
-          animate={{ 
-            scale: [1.2, 1, 1.2],
-            opacity: [0.5, 0.3, 0.5]
-          }}
-          transition={{ 
-            duration: 8,
-            repeat: Infinity,
-            ease: "easeInOut",
-            delay: 1
-          }}
-        />
-      </div>
+    <div className="min-h-screen bg-[#0a0a0f] py-6 relative overflow-hidden">
+      <PremiumBackground variant="blue" />
 
       <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         {/* Header */}
@@ -513,7 +646,7 @@ const TradingMarketplace: React.FC = () => {
         >
           <div className="flex items-center space-x-4">
             <Link 
-              to="/creator-marketplace"
+              to="/marketplace"
               className="flex items-center space-x-2 text-gray-400 hover:text-white transition-colors group"
             >
               <motion.div whileHover={{ x: -3 }}>
@@ -523,37 +656,46 @@ const TradingMarketplace: React.FC = () => {
             </Link>
             <div className="h-6 w-px bg-white/20"></div>
             <div className="flex items-center space-x-3">
-              <motion.h1 
-                className="text-3xl md:text-4xl font-display font-bold text-white"
-                animate={{ 
-                  backgroundPosition: ['0%', '100%', '0%']
-                }}
-                transition={{ 
-                  duration: 5,
-                  repeat: Infinity,
-                  ease: "linear"
-                }}
-                style={{
-                  backgroundImage: 'linear-gradient(90deg, #fff, #818cf8, #fff)',
-                  backgroundSize: '200% auto',
-                  backgroundClip: 'text',
-                  WebkitBackgroundClip: 'text',
-                  color: 'transparent'
-                }}
-              >
-                ${tokenData.symbol}
-              </motion.h1>
-              <motion.span 
-                whileHover={{ scale: 1.05 }}
-                className="px-3 py-1 bg-gradient-to-r from-blue-500/20 to-purple-500/20 border border-blue-500/30 text-blue-400 rounded-full text-sm font-medium"
-              >
-                {tokenData.name}
-              </motion.span>
+              <div className="flex flex-col">
+                <motion.h1 
+                  className="text-4xl md:text-5xl font-black text-white mb-2"
+                  animate={{ 
+                    backgroundPosition: ['0%', '100%', '0%']
+                  }}
+                  transition={{ 
+                    duration: 5,
+                    repeat: Infinity,
+                    ease: "linear"
+                  }}
+                  style={{
+                    backgroundImage: 'linear-gradient(90deg, #fff, #818cf8, #ec4899, #fff)',
+                    backgroundSize: '200% auto',
+                    backgroundClip: 'text',
+                    WebkitBackgroundClip: 'text',
+                    color: 'transparent'
+                  }}
+                >
+                  <span className="truncate block" title={tokenData.token_name || tokenData.name || 'Token'}>{tokenData.token_name || tokenData.name || 'Token'}</span>
+                </motion.h1>
+                <motion.div 
+                  whileHover={{ scale: 1.05 }}
+                  className="flex items-center space-x-2"
+                >
+                  <span className="px-4 py-2 bg-gradient-to-r from-blue-500/30 to-purple-500/30 border-2 border-blue-500/50 text-blue-300 rounded-full text-lg font-bold">
+                    ${tokenData.token_symbol || tokenData.symbol}
+                  </span>
+                  {tokenData.platform && (
+                    <span className="px-3 py-1 bg-white/10 border border-white/20 text-white rounded-full text-xs font-medium capitalize">
+                      {tokenData.platform}
+                    </span>
+                  )}
+                </motion.div>
+              </div>
               <motion.div
                 animate={{ scale: [1, 1.2, 1] }}
                 transition={{ duration: 2, repeat: Infinity }}
               >
-                <Flame className="w-5 h-5 text-orange-400" />
+                <Flame className="w-5 h-5 text-violet-400" />
               </motion.div>
             </div>
           </div>
@@ -666,12 +808,12 @@ const TradingMarketplace: React.FC = () => {
                   >
                     <LineChart className="w-6 h-6 text-blue-400" />
                   </motion.div>
-                  <span>Live Price Chart</span>
+                  <span>Live Price Chart - Real Trade Data</span>
                   <motion.div
                     animate={{ scale: [1, 1.2, 1], opacity: [1, 0.5, 1] }}
                     transition={{ duration: 2, repeat: Infinity }}
                   >
-                    <Zap className="w-5 h-5 text-yellow-400" />
+                    <Zap className="w-5 h-5 text-violet-400" />
                   </motion.div>
                 </h3>
                 <div className="flex space-x-2">
@@ -768,6 +910,23 @@ const TradingMarketplace: React.FC = () => {
                   </div>
                 </motion.div>
               </div>
+              
+              {/* Bonding Curve Chart */}
+              {tokenData?.bonding_curve_config && tokenData?.bonding_curve_state && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.25 }}
+                  className="mt-6"
+                >
+                  <BondingCurveChart
+                    config={tokenData.bonding_curve_config}
+                    currentSupply={tokenData.bonding_curve_state.token_supply || 0}
+                    currentPrice={currentPrice}
+                    marketCap={tokenData.marketCap || tokenData.market_cap || 0}
+                  />
+                </motion.div>
+              )}
             </motion.div>
 
             {/* Order Book & Recent Trades */}
@@ -1054,6 +1213,16 @@ const TradingMarketplace: React.FC = () => {
                   )}
                 </motion.div>
 
+                {tradeError && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 mb-4"
+                  >
+                    <p className="text-red-400 text-sm">{tradeError}</p>
+                  </motion.div>
+                )}
+
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
@@ -1096,6 +1265,24 @@ const TradingMarketplace: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Trade Success Modal */}
+      {successTradeData && tokenData && (
+        <TradeSuccessModal
+          isOpen={showSuccessModal}
+          onClose={() => {
+            setShowSuccessModal(false)
+            setSuccessTradeData(null)
+          }}
+          tradeType={successTradeData.tradeType}
+          amount={successTradeData.amount}
+          tokenSymbol={tokenData.symbol}
+          price={successTradeData.price}
+          totalAlgo={successTradeData.totalAlgo}
+          transactionId={successTradeData.transactionId}
+          assetId={tokenData.asa_id}
+        />
+      )}
     </div>
   )
 }

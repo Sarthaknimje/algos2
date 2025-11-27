@@ -12,10 +12,11 @@ const Layout: React.FC = () => {
 
   const navigation = [
     { name: 'Home', href: '/', icon: Home },
-    { name: 'Launch Token', href: '/launchpad', icon: Rocket },
-    { name: 'My Content', href: '/content-tokenization', icon: Play },
-    { name: 'Creators', href: '/creator-marketplace', icon: BarChart3 },
-    { name: 'My Profile', href: '/profile', icon: User },
+    { name: 'Dashboard', href: '/dashboard', icon: BarChart3 },
+    { name: 'Tokenize', href: '/tokenize', icon: Rocket },
+    { name: 'Marketplace', href: '/marketplace', icon: BarChart3 },
+    { name: 'YouTube Videos', href: '/youtube/videos', icon: Play },
+    { name: 'Profile', href: '/profile', icon: User },
   ]
 
   const formatAddress = (addr: string) => {
@@ -23,9 +24,9 @@ const Layout: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900">
+    <div className="min-h-screen bg-[#0a0a0f]">
       {/* Navigation */}
-      <nav className="glass-effect border-b border-white/10 sticky top-0 z-50">
+      <nav className="bg-[#0a0a0f]/80 backdrop-blur-xl border-b border-white/5 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             {/* Enhanced Logo */}
@@ -35,7 +36,7 @@ const Layout: React.FC = () => {
             >
               <Link to="/" className="flex items-center space-x-3 group">
                 <motion.div 
-                  className="w-10 h-10 bg-gradient-to-r from-primary-500 to-secondary-500 rounded-xl flex items-center justify-center shadow-lg group-hover:shadow-primary-500/25 transition-all duration-300"
+                  className="w-10 h-10 bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-xl flex items-center justify-center shadow-lg group-hover:shadow-violet-500/25 transition-all duration-300"
                   whileHover={{ rotate: 5 }}
                 >
                   <span className="text-white font-bold text-xl">C</span>
@@ -75,15 +76,15 @@ const Layout: React.FC = () => {
                       to={item.href}
                       className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-all duration-300 group ${
                         isActive
-                          ? 'bg-primary-500/20 text-primary-400 border border-primary-500/30'
-                          : 'text-gray-300 hover:text-white hover:bg-white/10'
+                          ? 'bg-violet-500/20 text-violet-400 border border-violet-500/30'
+                          : 'text-gray-400 hover:text-white hover:bg-white/5'
                       }`}
                     >
                       <motion.div
                         whileHover={{ scale: 1.1, rotate: 5 }}
                         transition={{ type: "spring", stiffness: 300, damping: 20 }}
                       >
-                        <Icon className={`w-5 h-5 ${isActive ? 'text-primary-400' : 'text-gray-400 group-hover:text-white'}`} />
+                        <Icon className={`w-5 h-5 ${isActive ? 'text-violet-400' : 'text-gray-500 group-hover:text-white'}`} />
                       </motion.div>
                       <span className="font-medium">{item.name}</span>
                     </Link>
@@ -209,7 +210,7 @@ const Layout: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
             <div className="col-span-1 md:col-span-2">
               <div className="flex items-center space-x-2 mb-4">
-                <div className="w-8 h-8 bg-gradient-to-r from-primary-500 to-secondary-500 rounded-lg flex items-center justify-center">
+                <div className="w-8 h-8 bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-lg flex items-center justify-center">
                   <span className="text-white font-bold text-lg">C</span>
                 </div>
                 <span className="text-white font-display font-bold text-xl gradient-text">
@@ -224,9 +225,9 @@ const Layout: React.FC = () => {
             <div>
               <h3 className="text-white font-semibold mb-4">Platform</h3>
               <ul className="space-y-2 text-gray-400">
-                <li><Link to="/launchpad" className="hover:text-white transition-colors">Launch Token</Link></li>
-                <li><Link to="/content-tokenization" className="hover:text-white transition-colors">Tokenize Content</Link></li>
-                <li><Link to="/creator-marketplace" className="hover:text-white transition-colors">Creator Marketplace</Link></li>
+                <li><Link to="/dashboard" className="hover:text-white transition-colors">Dashboard</Link></li>
+                <li><Link to="/tokenize" className="hover:text-white transition-colors">Tokenize Content</Link></li>
+                <li><Link to="/marketplace" className="hover:text-white transition-colors">Marketplace</Link></li>
                 <li><Link to="/profile" className="hover:text-white transition-colors">My Profile</Link></li>
               </ul>
             </div>

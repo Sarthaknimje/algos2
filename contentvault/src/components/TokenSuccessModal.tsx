@@ -6,15 +6,51 @@ import ConfettiAnimation from './ConfettiAnimation'
 interface TokenSuccessModalProps {
   isOpen: boolean
   onClose: () => void
-  tokenInfo: VideoTokenInfo | null
+  tokenInfo?: VideoTokenInfo | null
+  // Alternative props for direct usage
+  tokenName?: string
+  tokenSymbol?: string
+  totalSupply?: number
+  transactionId?: string
+  assetId?: number
+  message?: string
 }
 
 export const TokenSuccessModal: React.FC<TokenSuccessModalProps> = ({
   isOpen,
   onClose,
-  tokenInfo
+  tokenInfo,
+  tokenName,
+  tokenSymbol,
+  totalSupply,
+  transactionId,
+  assetId,
+  message
 }) => {
-  if (!isOpen || !tokenInfo) return null
+  if (!isOpen) return null
+
+  // Use direct props if provided, otherwise use tokenInfo
+  const displayData = tokenInfo ? {
+    tokenName: tokenInfo.assetName,
+    tokenSymbol: tokenInfo.unitName,
+    totalSupply: tokenInfo.totalSupply,
+    transactionId: tokenInfo.transactionId,
+    assetId: tokenInfo.assetId,
+    creator: tokenInfo.creator,
+    currentPrice: tokenInfo.currentPrice,
+    videoTitle: tokenInfo.videoTitle
+  } : {
+    tokenName: tokenName || 'Unknown',
+    tokenSymbol: tokenSymbol || 'UNK',
+    totalSupply: totalSupply || 0,
+    transactionId: transactionId || '',
+    assetId: assetId || 0,
+    creator: '',
+    currentPrice: 0.01,
+    videoTitle: tokenName || 'Content Token'
+  }
+
+  if (!displayData.assetId && displayData.assetId !== 0) return null
 
   return (
     <>
@@ -81,7 +117,7 @@ export const TokenSuccessModal: React.FC<TokenSuccessModalProps> = ({
             animate={{ y: 0, opacity: 1 }}
             transition={{ delay: 0.4 }}
           >
-            Your video token has been successfully minted on Algorand
+            {message || 'Your content token has been successfully minted on Algorand!'}
           </motion.p>
 
           {/* Token Details */}
@@ -91,39 +127,43 @@ export const TokenSuccessModal: React.FC<TokenSuccessModalProps> = ({
             animate={{ y: 0, opacity: 1 }}
             transition={{ delay: 0.5 }}
           >
-            {/* Video Title */}
+            {/* Content Title */}
             <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
-              <div className="text-sm text-white/60 mb-1">Video Title</div>
-              <div className="text-white font-medium truncate">{tokenInfo.videoTitle}</div>
+              <div className="text-sm text-white/60 mb-1">Token Name</div>
+              <div className="text-white font-medium truncate">{displayData.tokenName}</div>
             </div>
 
             {/* ASA ID */}
             <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
               <div className="text-sm text-white/60 mb-1">ASA ID</div>
-              <div className="text-white font-mono text-lg">{tokenInfo.assetId}</div>
+              <div className="text-white font-mono text-lg">{displayData.assetId}</div>
             </div>
 
             {/* Creator Address */}
-            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
-              <div className="text-sm text-white/60 mb-1">Creator Address</div>
-              <div className="text-white font-mono text-sm break-all">{tokenInfo.creator}</div>
-            </div>
+            {displayData.creator && (
+              <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
+                <div className="text-sm text-white/60 mb-1">Creator Address</div>
+                <div className="text-white font-mono text-sm break-all">{displayData.creator}</div>
+              </div>
+            )}
 
             {/* Transaction ID */}
-            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
-              <div className="text-sm text-white/60 mb-1">Transaction ID</div>
-              <div className="text-white font-mono text-sm break-all">{tokenInfo.transactionId}</div>
-            </div>
+            {displayData.transactionId && (
+              <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
+                <div className="text-sm text-white/60 mb-1">Transaction ID</div>
+                <div className="text-white font-mono text-sm break-all">{displayData.transactionId}</div>
+              </div>
+            )}
 
             {/* Asset Details */}
             <div className="grid grid-cols-2 gap-4">
-              <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
-                <div className="text-sm text-white/60 mb-1">Asset Name</div>
-                <div className="text-white font-medium">{tokenInfo.assetName}</div>
+              <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 overflow-hidden">
+                <div className="text-sm text-white/60 mb-1">Token Name</div>
+                <div className="text-white font-medium truncate" title={displayData.tokenName}>{displayData.tokenName}</div>
               </div>
               <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
-                <div className="text-sm text-white/60 mb-1">Unit Name</div>
-                <div className="text-white font-medium">{tokenInfo.unitName}</div>
+                <div className="text-sm text-white/60 mb-1">Token Symbol</div>
+                <div className="text-white font-medium">{displayData.tokenSymbol}</div>
               </div>
             </div>
 
@@ -131,13 +171,19 @@ export const TokenSuccessModal: React.FC<TokenSuccessModalProps> = ({
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 text-center">
                 <div className="text-sm text-white/60 mb-1">Total Supply</div>
-                <div className="text-white font-bold text-xl">{tokenInfo.totalSupply.toLocaleString()}</div>
+                <div className="text-white font-bold text-xl">{displayData.totalSupply.toLocaleString()}</div>
               </div>
               <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 text-center">
-                <div className="text-sm text-white/60 mb-1">Current Price</div>
-                <div className="text-white font-bold text-xl">${tokenInfo.currentPrice}</div>
+                <div className="text-sm text-white/60 mb-1">Initial Price</div>
+                <div className="text-white font-bold text-xl">${displayData.currentPrice.toFixed(4)}</div>
               </div>
             </div>
+            
+            {message && (
+              <div className="bg-green-500/20 border border-green-500/50 rounded-xl p-4 text-center">
+                <p className="text-green-200 text-sm">{message}</p>
+              </div>
+            )}
           </motion.div>
 
           {/* Action Buttons */}
@@ -148,7 +194,7 @@ export const TokenSuccessModal: React.FC<TokenSuccessModalProps> = ({
             transition={{ delay: 0.6 }}
           >
             <button
-              onClick={() => window.open(`https://testnet.algoexplorer.io/asset/${tokenInfo.assetId}`, '_blank')}
+              onClick={() => window.open(`https://testnet.algoexplorer.io/asset/${displayData.assetId}`, '_blank')}
               className="flex-1 bg-gradient-to-r from-blue-500 to-purple-600 text-white py-3 px-6 rounded-xl font-medium hover:from-blue-600 hover:to-purple-700 transition-all duration-200 transform hover:scale-105"
             >
               View on Explorer
@@ -177,3 +223,4 @@ export const TokenSuccessModal: React.FC<TokenSuccessModalProps> = ({
 }
 
 export default TokenSuccessModal
+

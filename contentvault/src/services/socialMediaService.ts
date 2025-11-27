@@ -1,262 +1,306 @@
-import axios from 'axios'
+/**
+ * Multi-Platform Social Media Service
+ * FREE - No API keys required! Uses web scraping for Instagram, Twitter, LinkedIn
+ * YouTube still uses API (as requested)
+ */
 
-const YOUTUBE_API_KEY = 'AIzaSyBYVrcI-3CGBzVQplilpDT0oEmjL7Xl5gk'
+const API_BASE_URL = 'http://localhost:5001'
 
-export interface SocialStats {
-  followers: number
-  following: number
-  posts: number
-  verified: boolean
-}
-
-export interface YouTubeStats {
-  subscribers: number
-  views: number
-  videos: number
-  channelId: string
-  thumbnailUrl: string
-}
-
-export interface YouTubeVideo {
+export interface SocialMediaContent {
   id: string
+  platform: 'instagram' | 'twitter' | 'linkedin' | 'youtube'
   title: string
   description: string
-  thumbnail: string
-  publishedAt: string
-  viewCount: number
-  likeCount: number
-  duration: string
+  thumbnailUrl?: string
+  url: string
+  authorId?: string
+  authorName: string
+  createdAt: string
+  engagement?: {
+    likes?: number
+    comments?: number
+    shares?: number
+    views?: number
+  }
+  // Ownership verification (for YouTube - checks if video belongs to connected channel)
+  isOwned?: boolean
+  ownershipMessage?: string
+  connectedChannelId?: string
 }
 
-// YouTube API Integration
-export async function getYouTubeChannelStats(channelUrl: string): Promise<YouTubeStats | null> {
-  try {
-    let channelId = ''
-    
-    // Check if it's already a channel ID (starts with UC and is 24 chars)
-    if (channelUrl.startsWith('UC') && channelUrl.length === 24) {
-      channelId = channelUrl
+export interface ScrapeResult {
+  success: boolean
+  content?: SocialMediaContent
+  error?: string
+}
+
+class SocialMediaService {
+  /**
+   * Scrape content from URL (Instagram, Twitter, LinkedIn)
+   * FREE - No API keys required!
+   */
+  async scrapeContentFromUrl(
+    url: string,
+    platform?: 'instagram' | 'twitter' | 'linkedin' | 'youtube',
+    claimedUsername?: string
+  ): Promise<ScrapeResult> {
+    try {
+      // For YouTube, use the YouTube API endpoint instead of scraping
+      if (platform === 'youtube') {
+        const response = await fetch(`${API_BASE_URL}/api/youtube/video-info`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            url: url.trim()
+          })
+        })
+
+        const data = await response.json()
+        if (data.success && data.content) {
+          // Convert YouTube API response to SocialMediaContent format
+          // IMPORTANT: Include ownership verification from backend
+          const isOwned = data.content.isOwned !== false && data.verified !== false
+          
+          return {
+            success: true,
+            content: {
+              id: data.content.id,
+              title: data.content.title,
+              description: data.content.description,
+              thumbnailUrl: data.content.thumbnail,
+              url: data.content.url,
+              platform: 'youtube',
+              authorName: data.content.channelTitle,
+              createdAt: data.content.publishedAt || new Date().toISOString(),
+              engagement: {
+                views: data.content.viewCount,
+                likes: data.content.likeCount,
+                comments: data.content.commentCount
+              },
+              // Ownership verification fields
+              isOwned: isOwned,
+              ownershipMessage: data.content.ownershipMessage || (isOwned ? 'You own this video.' : 'This video belongs to another channel.'),
+              connectedChannelId: data.content.connectedChannelId
+            },
+            verification: {
+              verified: isOwned,
+              message: isOwned 
+                ? '✅ YouTube video verified - you own this content' 
+                : '❌ This video belongs to another channel. You can only tokenize your own content.'
+            }
+          } as any
     } else {
-      // Extract channel ID or username from URL
-      const channelIdMatch = channelUrl.match(/channel\/([^\/\?]+)/)
-      const handleMatch = channelUrl.match(/@([^\/\?]+)/)
-      const customMatch = channelUrl.match(/c\/([^\/\?]+)/)
+          return {
+            success: false,
+            error: data.error || 'Failed to fetch YouTube video'
+          }
+        }
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/scrape-content`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          url: url.trim(),
+          platform: platform?.toLowerCase(),
+          username: claimedUsername?.trim()
+        })
+      })
+
+      const data = await response.json()
+
+      if (data.success && data.content) {
+        const result: ScrapeResult = {
+          success: true,
+          content: {
+            id: data.content.id,
+            platform: data.content.platform,
+            title: data.content.title,
+            description: data.content.description,
+            thumbnailUrl: data.content.thumbnailUrl,
+            url: data.content.url,
+            authorId: data.content.authorId,
+            authorName: data.content.authorName,
+            createdAt: data.content.createdAt,
+            engagement: data.content.engagement
+          }
+        }
+        
+        // Include verification data if available
+        if (data.verification) {
+          (result as any).verification = data.verification
+        }
+        
+        return result
+      }
+    
+    return {
+        success: false,
+        error: data.error || 'Failed to scrape content'
+    }
+  } catch (error: any) {
+      console.error('Error scraping content:', error)
+      return {
+        success: false,
+        error: error.message || 'Network error'
+      }
+    }
+  }
+
+  /**
+   * Verify content ownership through URL pattern matching
+   */
+  async verifyUrlOwnership(
+    url: string,
+    platform: 'instagram' | 'twitter' | 'linkedin',
+    claimedUsername?: string
+  ): Promise<{verified: boolean, message: string}> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/verify-ownership`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          url: url.trim(),
+          platform: platform.toLowerCase(),
+          username: claimedUsername?.trim()
+        })
+      })
+
+      const data = await response.json()
+      if (data.success) {
+        return {
+          verified: data.verified === true,
+          message: data.message || (data.verified ? 'Ownership verified' : 'Ownership verification failed')
+        }
+      }
+      return {
+        verified: false,
+        message: data.error || 'Verification failed'
+      }
+    } catch (error) {
+      console.error('Error verifying ownership:', error)
+      return {
+        verified: false,
+        message: 'Network error during verification'
+      }
+    }
+  }
+
+  /**
+   * Detect platform from URL
+   */
+  detectPlatformFromUrl(url: string): 'instagram' | 'twitter' | 'linkedin' | 'youtube' | null {
+    const lowerUrl = url.toLowerCase()
+    
+    if (lowerUrl.includes('instagram.com') || lowerUrl.includes('instagr.am')) {
+      return 'instagram'
+    } else if (lowerUrl.includes('twitter.com') || lowerUrl.includes('x.com')) {
+      return 'twitter'
+    } else if (lowerUrl.includes('linkedin.com')) {
+      return 'linkedin'
+    } else if (lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be')) {
+      return 'youtube'
+    }
+    
+    return null
+  }
+
+  /**
+   * Validate URL format
+   */
+  validateUrl(url: string, platform?: 'instagram' | 'twitter' | 'linkedin' | 'youtube'): boolean {
+    try {
+      const urlObj = new URL(url)
       
-      if (channelIdMatch) {
-        channelId = channelIdMatch[1]
-      } else if (handleMatch || customMatch) {
-        const identifier = handleMatch ? handleMatch[1] : customMatch![1]
-        
-        // Search for channel by handle/custom name
-        const searchResponse = await axios.get(
-          `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${identifier}&type=channel&key=${YOUTUBE_API_KEY}&maxResults=1`
-        )
-        
-        if (!searchResponse.data.items || searchResponse.data.items.length === 0) {
-          console.error('Channel not found in search')
-          return null
-        }
-        
-        channelId = searchResponse.data.items[0].id.channelId
-      } else {
-        // Try to search directly
-        const searchResponse = await axios.get(
-          `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${channelUrl}&type=channel&key=${YOUTUBE_API_KEY}&maxResults=1`
-        )
-        
-        if (!searchResponse.data.items || searchResponse.data.items.length === 0) {
-          console.error('No channel found for:', channelUrl)
-          return null
-        }
-        
-        channelId = searchResponse.data.items[0].id.channelId
+      if (platform) {
+        const detected = this.detectPlatformFromUrl(url)
+        return detected === platform
       }
+      
+      return ['instagram.com', 'instagr.am', 'twitter.com', 'x.com', 'linkedin.com', 'youtube.com', 'youtu.be'].some(
+        domain => urlObj.hostname.includes(domain)
+      )
+    } catch {
+      return false
     }
-    
-    console.log('Fetching channel with ID:', channelId)
-    
-    // Get channel statistics
-    const channelResponse = await axios.get(
-      `https://www.googleapis.com/youtube/v3/channels?part=statistics,snippet&id=${channelId}&key=${YOUTUBE_API_KEY}`
-    )
-    
-    if (!channelResponse.data.items || channelResponse.data.items.length === 0) {
-      console.error('Channel not found with ID:', channelId)
+  }
+
+  /**
+   * Extract username from URL (for ownership verification)
+   */
+  extractUsernameFromUrl(url: string, platform: 'instagram' | 'twitter' | 'linkedin'): string | null {
+    try {
+      const urlObj = new URL(url)
+      const pathParts = urlObj.pathname.split('/').filter(p => p)
+      
+      if (platform === 'instagram') {
+        // Format: /username/reel/ABC123/ or /reel/ABC123/
+        if (pathParts.length >= 1 && pathParts[0] !== 'reel') {
+          return pathParts[0]
+        }
+      } else if (platform === 'twitter') {
+        // Format: /username/status/123456 (works for both twitter.com and x.com)
+        if (pathParts.length >= 1 && pathParts[0] !== 'status') {
+          return pathParts[0]
+        }
+      } else if (platform === 'linkedin') {
+        // Format: /in/username/posts/... or /posts/... or /feed/update/...
+        const inIndex = pathParts.indexOf('in')
+        if (inIndex >= 0 && pathParts.length > inIndex + 1) {
+          return pathParts[inIndex + 1]
+        }
+        // Try to extract from posts URL: /posts/username_activity-123456
+        const postsIndex = pathParts.indexOf('posts')
+        if (postsIndex >= 0 && pathParts.length > postsIndex + 1) {
+          const postPart = pathParts[postsIndex + 1]
+          // Extract username from format like "username_activity-123456"
+          const usernameMatch = postPart.match(/^([^_]+)_/)
+          if (usernameMatch) {
+            return usernameMatch[1]
+          }
+        }
+      }
+      
       return null
-    }
-    
-    const channel = channelResponse.data.items[0]
-    
-    console.log('Channel found:', channel.snippet.title)
-    
-    return {
-      subscribers: parseInt(channel.statistics.subscriberCount) || 0,
-      views: parseInt(channel.statistics.viewCount) || 0,
-      videos: parseInt(channel.statistics.videoCount) || 0,
-      channelId: channelId,
-      thumbnailUrl: channel.snippet.thumbnails.default.url
-    }
-  } catch (error: any) {
-    console.error('YouTube API Error:', error.response?.data || error.message)
+    } catch {
     return null
   }
 }
 
-export async function getYouTubeVideos(channelId: string, maxResults: number = 20): Promise<YouTubeVideo[]> {
-  try {
-    console.log('Fetching videos for channel:', channelId)
-    
-    // Get channel uploads playlist
-    const channelResponse = await axios.get(
-      `https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=${channelId}&key=${YOUTUBE_API_KEY}`
-    )
-    
-    if (!channelResponse.data.items || channelResponse.data.items.length === 0) {
-      console.error('No channel found for videos')
-      return []
-    }
-    
-    const uploadsPlaylistId = channelResponse.data.items[0].contentDetails.relatedPlaylists.uploads
-    console.log('Uploads playlist ID:', uploadsPlaylistId)
-    
-    // Get videos from playlist
-    const playlistResponse = await axios.get(
-      `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}&maxResults=${maxResults}&key=${YOUTUBE_API_KEY}`
-    )
-    
-    if (!playlistResponse.data.items || playlistResponse.data.items.length === 0) {
-      console.log('No videos found in playlist')
-      return []
-    }
-    
-    const videoIds = playlistResponse.data.items.map((item: any) => item.snippet.resourceId.videoId).join(',')
-    console.log(`Fetching stats for ${playlistResponse.data.items.length} videos`)
-    
-    // Get video statistics
-    const videosResponse = await axios.get(
-      `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails&id=${videoIds}&key=${YOUTUBE_API_KEY}`
-    )
-    
-    const videos = videosResponse.data.items.map((video: any) => ({
-      id: video.id,
-      title: video.snippet.title,
-      description: video.snippet.description,
-      thumbnail: video.snippet.thumbnails.medium?.url || video.snippet.thumbnails.default?.url,
-      publishedAt: video.snippet.publishedAt,
-      viewCount: parseInt(video.statistics.viewCount) || 0,
-      likeCount: parseInt(video.statistics.likeCount) || 0,
-      duration: video.contentDetails.duration
-    }))
-    
-    console.log(`Successfully fetched ${videos.length} videos`)
-    return videos
-  } catch (error: any) {
-    console.error('YouTube Videos Error:', error.response?.data || error.message)
-    return []
-  }
-}
+  /**
+   * Check YouTube authentication status (still uses API)
+   */
+  async checkYouTubeAuth(): Promise<{ isConnected: boolean; channelId?: string; channelTitle?: string }> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/youtube/status`, {
+        method: 'GET',
+        credentials: 'include'
+      })
 
-// Instagram scraping (note: Instagram blocks direct scraping, this is for demonstration)
-export async function getInstagramStats(username: string): Promise<SocialStats | null> {
-  try {
-    // For production, you'd use Instagram Graph API
-    // This is a fallback that tries to fetch public data
-    const response = await axios.get(`https://www.instagram.com/${username}/?__a=1&__d=dis`, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      }
-    })
-    
-    const userData = response.data.graphql?.user || response.data.user
-    
-    if (!userData) return null
-    
+      if (response.ok) {
+        const data = await response.json()
     return {
-      followers: userData.edge_followed_by?.count || 0,
-      following: userData.edge_follow?.count || 0,
-      posts: userData.edge_owner_to_timeline_media?.count || 0,
-      verified: userData.is_verified || false
+          isConnected: data.authenticated || false,
+          channelId: data.channel_id,
+          channelTitle: data.channel_title
+        }
     }
   } catch (error) {
-    console.error('Instagram fetch error:', error)
-    // Return mock data as fallback for demo
-    return {
-      followers: 47600000, // Rashmika Mandanna followers
-      following: 333,
-      posts: 849,
-      verified: true
+      console.error('Error checking YouTube auth:', error)
     }
+
+    return { isConnected: false }
   }
 }
 
-// Twitter/X API (requires authentication, using mock data)
-export async function getTwitterStats(username: string): Promise<SocialStats | null> {
-  try {
-    // For production, use Twitter API v2 with authentication
-    // This returns mock data for demonstration
-    return {
-      followers: 128, // Sarthak Nimje followers
-      following: 1681,
-      posts: 482,
-      verified: false
-    }
-  } catch (error) {
-    console.error('Twitter fetch error:', error)
-    return null
-  }
-}
-
-// LinkedIn scraping (LinkedIn blocks scraping, using mock data)
-export async function getLinkedInStats(profileUrl: string): Promise<SocialStats | null> {
-  try {
-    // For production, use LinkedIn API with OAuth
-    // This returns mock data for demonstration
-    return {
-      followers: 5487, // Sarthak Nimje LinkedIn followers
-      following: 0,
-      posts: 0,
-      verified: true
-    }
-  } catch (error) {
-    console.error('LinkedIn fetch error:', error)
-    return null
-  }
-}
-
-// Aggregate all social stats
-export async function getAllSocialStats(socialLinks: {
-  youtube?: string
-  instagram?: string
-  twitter?: string
-  linkedin?: string
-}): Promise<{
-  youtube: YouTubeStats | null
-  instagram: SocialStats | null
-  twitter: SocialStats | null
-  linkedin: SocialStats | null
-  totalFollowers: number
-}> {
-  const results = await Promise.all([
-    socialLinks.youtube ? getYouTubeChannelStats(socialLinks.youtube) : null,
-    socialLinks.instagram ? getInstagramStats(socialLinks.instagram) : null,
-    socialLinks.twitter ? getTwitterStats(socialLinks.twitter) : null,
-    socialLinks.linkedin ? getLinkedInStats(socialLinks.linkedin) : null
-  ])
-  
-  const [youtube, instagram, twitter, linkedin] = results
-  
-  const totalFollowers = 
-    (youtube?.subscribers || 0) +
-    (instagram?.followers || 0) +
-    (twitter?.followers || 0) +
-    (linkedin?.followers || 0)
-  
-  return {
-    youtube,
-    instagram,
-    twitter,
-    linkedin,
-    totalFollowers
-  }
-}
-
+export const socialMediaService = new SocialMediaService()
+export default socialMediaService

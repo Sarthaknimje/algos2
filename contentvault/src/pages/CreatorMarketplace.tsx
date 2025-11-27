@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { 
   Search, 
@@ -15,11 +15,15 @@ import {
   Share2,
   ExternalLink,
   Loader,
-  AlertCircle
+  AlertCircle,
+  Sparkles,
+  Wallet
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useWallet } from '../contexts/WalletContext'
-import { PeraWalletIcon, YouTubeIcon } from '../assets/icons'
+import { PeraWalletIcon, YouTubeIcon, InstagramIcon, TwitterIcon, LinkedInIcon } from '../assets/icons'
+import SVGBackground from '../components/SVGBackground'
+import PremiumBackground from '../components/PremiumBackground'
 
 interface CreatorToken {
   asa_id: number
@@ -35,6 +39,11 @@ interface CreatorToken {
   youtube_channel_title: string
   youtube_subscribers: number
   created_at: string
+  platform?: string
+  content_url?: string
+  content_id?: string
+  content_description?: string
+  content_thumbnail?: string
 }
 
 const BACKEND_URL = 'http://localhost:5001'
@@ -49,16 +58,9 @@ const CreatorMarketplace: React.FC = () => {
   const [sortBy, setSortBy] = useState<'market_cap' | 'price_change' | 'holders' | 'created_at'>('market_cap')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
   const [error, setError] = useState<string | null>(null)
+  const [retryCount, setRetryCount] = useState(0)
 
-  useEffect(() => {
-    fetchTokens()
-  }, [])
-
-  useEffect(() => {
-    filterAndSortTokens()
-  }, [tokens, searchQuery, sortBy, sortOrder])
-
-  const fetchTokens = async () => {
+  const fetchTokens = useCallback(async () => {
     try {
       setIsLoadingTokens(true)
       setError(null)
@@ -71,26 +73,56 @@ const CreatorMarketplace: React.FC = () => {
       })
 
       if (!response.ok) {
-        throw new Error('Failed to fetch tokens')
+        throw new Error(`HTTP error! status: ${response.status}`)
       }
 
       const result = await response.json()
       
       if (result.success) {
-        setTokens(result.tokens)
-        console.log('✅ Fetched tokens:', result.tokens.length)
+        setTokens(result.tokens || [])
+        setError(null) // Clear error on success
+        setRetryCount(0) // Reset retry count
+        console.log('✅ Fetched tokens:', result.tokens?.length || 0)
       } else {
         throw new Error(result.error || 'Failed to fetch tokens')
       }
     } catch (error: any) {
       console.error('Error fetching tokens:', error)
-      setError(error.message)
+      const errorMsg = error.message || 'Failed to connect to backend. Please ensure the server is running on http://localhost:5001'
+      setError(errorMsg)
+      
+      // Show more helpful error message
+      if (errorMsg.includes('Failed to fetch') || errorMsg.includes('NetworkError')) {
+        setError('Cannot connect to backend server. Please ensure the backend is running on http://localhost:5001')
+      }
     } finally {
       setIsLoadingTokens(false)
     }
-  }
+  }, [])
 
-  const filterAndSortTokens = () => {
+  useEffect(() => {
+    fetchTokens()
+  }, [fetchTokens])
+
+  // Retry logic - separate effect to avoid dependency issues
+  useEffect(() => {
+    if (!error) return
+    
+    // Retry every 5 seconds if failed (max 3 retries)
+    const interval = setInterval(() => {
+      setRetryCount(prev => {
+        if (prev < 3) {
+          fetchTokens()
+          return prev + 1
+        }
+        return prev
+      })
+    }, 5000)
+    
+    return () => clearInterval(interval)
+  }, [error, fetchTokens])
+
+  const filterAndSortTokens = useCallback(() => {
     let filtered = [...tokens]
 
     // Filter by search query
@@ -107,7 +139,7 @@ const CreatorMarketplace: React.FC = () => {
       let aValue: number
       let bValue: number
 
-    switch (sortBy) {
+      switch (sortBy) {
         case 'market_cap':
           aValue = a.market_cap
           bValue = b.market_cap
@@ -133,7 +165,11 @@ const CreatorMarketplace: React.FC = () => {
   })
 
     setFilteredTokens(filtered)
-  }
+  }, [tokens, searchQuery, sortBy, sortOrder])
+
+  useEffect(() => {
+    filterAndSortTokens()
+  }, [filterAndSortTokens])
 
   const formatNumber = (num: number) => {
     if (num >= 1000000) return (num / 1000000).toFixed(2) + 'M'
@@ -161,64 +197,75 @@ const CreatorMarketplace: React.FC = () => {
 
   if (isLoadingTokens) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="text-center"
-        >
+      <div className="min-h-screen bg-[#0a0a0f] relative">
+        <PremiumBackground variant="purple" />
+        <div className="relative z-10 flex items-center justify-center min-h-screen">
           <motion.div
-            animate={{ rotate: 360 }}
-            transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-            className="w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-6"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="text-center"
           >
-            <Loader className="w-8 h-8 text-white" />
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+              className="w-16 h-16 bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-2xl flex items-center justify-center mx-auto mb-6"
+            >
+              <Loader className="w-8 h-8 text-white" />
+            </motion.div>
+            <h2 className="text-2xl font-bold text-white mb-2">Loading Creator Tokens...</h2>
+            <p className="text-gray-400">Fetching real tokens from the blockchain</p>
           </motion.div>
-          <h2 className="text-2xl font-bold text-white mb-2">Loading Creator Tokens...</h2>
-          <p className="text-gray-400">Fetching real tokens from the blockchain</p>
-        </motion.div>
+        </div>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="text-center max-w-md mx-auto px-4"
-        >
-          <div className="w-16 h-16 bg-gradient-to-r from-red-500 to-orange-600 rounded-full flex items-center justify-center mx-auto mb-6">
-            <AlertCircle className="w-8 h-8 text-white" />
-          </div>
-          <h2 className="text-2xl font-bold text-white mb-4">Error Loading Tokens</h2>
-          <p className="text-gray-400 mb-6">{error}</p>
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={fetchTokens}
-            className="px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl text-white font-bold"
+      <div className="min-h-screen bg-[#0a0a0f] relative">
+        <PremiumBackground variant="purple" />
+        <div className="relative z-10 flex items-center justify-center min-h-screen">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="text-center max-w-md mx-auto px-4"
           >
-            Try Again
-          </motion.button>
-        </motion.div>
+            <div className="w-16 h-16 bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
+              <AlertCircle className="w-8 h-8 text-white" />
+            </div>
+            <h2 className="text-2xl font-bold text-white mb-4">Error Loading Tokens</h2>
+            <p className="text-gray-400 mb-6">{error}</p>
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={fetchTokens}
+              className="px-6 py-3 bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-xl text-white font-bold"
+            >
+              Try Again
+            </motion.button>
+          </motion.div>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen py-12">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-[#0a0a0f] py-12 relative">
+      <PremiumBackground variant="orange" />
+      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           className="text-center mb-12"
         >
-          <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-500 to-pink-500 mb-4">
-            Creator Marketplace
-              </h1>
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 backdrop-blur-sm mb-6">
+            <Sparkles className="w-4 h-4 text-violet-400" />
+            <span className="text-sm text-gray-300">Creator Token Marketplace</span>
+          </div>
+          <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">
+            Creator <span className="bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">Marketplace</span>
+          </h1>
           <p className="text-gray-400 text-xl max-w-2xl mx-auto">
             Discover and trade tokens from verified YouTube creators. All tokens are backed by real creator channels.
           </p>
@@ -254,7 +301,7 @@ const CreatorMarketplace: React.FC = () => {
           </div>
           
           <div className="card text-center">
-            <TrendingUp className="w-8 h-8 text-orange-400 mx-auto mb-3" />
+            <TrendingUp className="w-8 h-8 text-violet-400 mx-auto mb-3" />
             <div className="text-3xl font-bold text-white mb-1">
               ${formatNumber(tokens.reduce((sum, token) => sum + token.volume_24h, 0))}
             </div>
@@ -326,11 +373,11 @@ const CreatorMarketplace: React.FC = () => {
             </p>
             {!searchQuery && (
               <Link
-                to="/launchpad"
+                to="/tokenize"
                 className="btn-primary inline-flex items-center space-x-2"
               >
                 <Star className="w-5 h-5" />
-                <span>Launch Your Token</span>
+                <span>Tokenize Content</span>
               </Link>
             )}
           </motion.div>
@@ -345,16 +392,18 @@ const CreatorMarketplace: React.FC = () => {
                 whileHover={{ y: -5 }}
                 className="card hover:border-primary-500/50 transition-all cursor-pointer group"
                     >
-                {/* Token Header */}
-                <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center space-x-3">
-                    <div className="w-12 h-12 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-xl flex items-center justify-center text-white font-bold text-lg">
-                      {token.token_symbol.substring(0, 2)}
-                          </div>
-                          <div>
-                      <h3 className="text-xl font-bold text-white">${token.token_symbol}</h3>
-                      <p className="text-gray-400 text-sm">{token.token_name}</p>
-        </div>
+                {/* Token Header - Name Prominently Displayed */}
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center space-x-3 flex-1">
+                      <div className="w-14 h-14 bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-lg">
+                        {token.token_symbol.substring(0, 2)}
+                      </div>
+                      <div className="flex-1 min-w-0 overflow-hidden">
+                        <h3 className="text-xl font-black text-white mb-1 truncate" title={token.token_name}>{token.token_name}</h3>
+                        <p className="text-violet-400 font-semibold text-sm">${token.token_symbol}</p>
+                      </div>
+                    </div>
                   </div>
                   <div className="text-right">
                     <div className="text-lg font-bold text-white">${formatPrice(token.current_price)}</div>
@@ -365,13 +414,51 @@ const CreatorMarketplace: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Content Preview */}
+                {token.content_thumbnail && (
+                  <div className="mb-4 rounded-lg overflow-hidden">
+                    <img 
+                      src={token.content_thumbnail} 
+                      alt={token.token_name}
+                      className="w-full h-48 object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = 'none'
+                      }}
+                    />
+                  </div>
+                )}
+                
+                {/* Content Description */}
+                {token.content_description && (
+                  <div className="mb-4 p-3 bg-white/5 rounded-lg">
+                    <p className="text-gray-300 text-sm line-clamp-2">{token.content_description}</p>
+                  </div>
+                )}
+
                 {/* Creator Info */}
                 <div className="flex items-center space-x-3 mb-4 p-3 bg-white/5 rounded-lg">
-                  <YouTubeIcon className="w-5 h-5 text-red-500" />
-                  <div className="flex-1">
-                    <p className="text-white font-semibold text-sm">{token.youtube_channel_title}</p>
-                    <p className="text-gray-400 text-xs">{formatNumber(token.youtube_subscribers)} subscribers</p>
-                </div>
+                  {token.platform === 'youtube' ? (
+                    <YouTubeIcon className="w-5 h-5 text-red-500" />
+                  ) : token.platform === 'instagram' ? (
+                    <InstagramIcon className="w-5 h-5 text-pink-500" />
+                  ) : token.platform === 'twitter' ? (
+                    <TwitterIcon className="w-5 h-5 text-blue-400" />
+                  ) : token.platform === 'linkedin' ? (
+                    <LinkedInIcon className="w-5 h-5 text-blue-600" />
+                  ) : (
+                    <YouTubeIcon className="w-5 h-5 text-red-500" />
+                  )}
+                  <div className="flex-1 min-w-0 overflow-hidden">
+                    <p className="text-white font-semibold text-sm truncate" title={token.youtube_channel_title || token.token_name}>
+                      {token.youtube_channel_title || token.token_name}
+                    </p>
+                    {token.youtube_subscribers > 0 && (
+                      <p className="text-gray-400 text-xs">{formatNumber(token.youtube_subscribers)} subscribers</p>
+                    )}
+                    {token.platform && token.platform !== 'youtube' && (
+                      <p className="text-gray-400 text-xs capitalize">{token.platform} Content</p>
+                    )}
+                  </div>
               </div>
 
               {/* Metrics */}
@@ -386,6 +473,21 @@ const CreatorMarketplace: React.FC = () => {
                   </div>
                   </div>
 
+                {/* Content Link */}
+                {token.content_url && (
+                  <div className="mb-4">
+                    <a 
+                      href={token.content_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary-400 hover:text-primary-300 text-sm flex items-center space-x-1"
+                    >
+                      <span>View Original Content</span>
+                      <ExternalLink className="w-4 h-4" />
+                    </a>
+                  </div>
+                )}
+
                 {/* Actions */}
                 <div className="flex space-x-2">
                   <Link 
@@ -396,11 +498,11 @@ const CreatorMarketplace: React.FC = () => {
                     View
                   </Link>
                   <Link 
-                    to={`/trade/${token.token_symbol}`} 
+                    to={`/trade/${token.token_symbol?.trim() || token.token_symbol}`} 
                     className="btn-primary flex-1 text-sm"
                   >
                     <BarChart3 className="w-4 h-4 mr-1" />
-                    Trade
+                    Trade {token.token_symbol}
                   </Link>
                   </div>
 

@@ -5,6 +5,8 @@
 
 import { algorandService } from './algorandService'
 import { pythonBackendService } from './pythonBackendService'
+import { PeraWalletConnect } from '@perawallet/connect'
+import { transferASAWithPera, sendAlgoPaymentWithPera, optInToASAWithPera } from './peraWalletService'
 
 export interface ASAToken {
   assetId: number
@@ -365,6 +367,114 @@ class ASATradingService {
     } catch (error) {
       console.error('Error fetching trading pairs:', error)
       return []
+    }
+  }
+
+  /**
+   * Buy ASA tokens using Pera Wallet
+   * Opens Pera Wallet popup for user to sign transactions
+   */
+  async buyASA({
+    sender,
+    peraWallet,
+    assetId,
+    amount,
+    pricePerToken,
+    sellerAddress
+  }: {
+    sender: string
+    peraWallet: PeraWalletConnect
+    assetId: number
+    amount: number
+    pricePerToken: number
+    sellerAddress: string
+  }): Promise<string> {
+    try {
+      // Ensure amount is an integer (tokens can't be fractional)
+      const tokenAmount = Math.floor(amount)
+      if (tokenAmount <= 0) {
+        throw new Error('Token amount must be greater than 0')
+      }
+      
+      // Calculate total ALGO needed (this can be a float, will be converted to microAlgos)
+      const totalAlgo = tokenAmount * pricePerToken
+
+      // 1. Check if user has opted in to the ASA (if not, opt-in first)
+      try {
+        // Try to opt-in (will fail if already opted in, which is fine)
+        await optInToASAWithPera({
+          sender,
+          peraWallet,
+          assetId
+        })
+      } catch (optInError: any) {
+        // If already opted in, that's okay
+        if (!optInError.message?.includes('already opted in')) {
+          console.warn('Opt-in check:', optInError)
+        }
+      }
+
+      // 2. Send ALGO payment to seller
+      const paymentTxId = await sendAlgoPaymentWithPera({
+        sender,
+        peraWallet,
+        receiver: sellerAddress,
+        amount: totalAlgo  // Will be converted to microAlgos (integer) inside the function
+      })
+
+      // 3. Receive ASA tokens from seller (seller would need to transfer)
+      // For now, we'll just return the payment transaction ID
+      // In a real DEX, this would be an atomic swap or use a smart contract
+
+      return paymentTxId
+    } catch (error) {
+      console.error('Error buying ASA:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Sell ASA tokens using Pera Wallet
+   * Opens Pera Wallet popup for user to sign transactions
+   */
+  async sellASA({
+    sender,
+    peraWallet,
+    assetId,
+    amount,
+    pricePerToken,
+    buyerAddress
+  }: {
+    sender: string
+    peraWallet: PeraWalletConnect
+    assetId: number
+    amount: number
+    pricePerToken: number
+    buyerAddress: string
+  }): Promise<string> {
+    try {
+      // Ensure amount is an integer (tokens can't be fractional)
+      const tokenAmount = Math.floor(amount)
+      if (tokenAmount <= 0) {
+        throw new Error('Token amount must be greater than 0')
+      }
+      
+      // Transfer ASA tokens to buyer
+      const transferTxId = await transferASAWithPera({
+        sender,
+        peraWallet,
+        receiver: buyerAddress,
+        assetId,
+        amount: tokenAmount  // Will be converted to integer inside the function
+      })
+
+      // In a real DEX, the buyer would send ALGO in an atomic swap
+      // For now, we'll just return the transfer transaction ID
+
+      return transferTxId
+    } catch (error) {
+      console.error('Error selling ASA:', error)
+      throw error
     }
   }
 

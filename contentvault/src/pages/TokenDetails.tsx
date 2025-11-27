@@ -16,15 +16,27 @@ import {
   Activity,
   BarChart3
 } from 'lucide-react'
-import { usePeraWallet } from '../hooks/usePeraWallet'
+import { useWallet } from '../contexts/WalletContext'
 import { TokenIcon } from '../assets/icons'
+import { asaTradingService } from '../services/asaTradingService'
+import TradeSuccessModal from '../components/TradeSuccessModal'
 
 const TokenDetails: React.FC = () => {
   const { id } = useParams()
-  const { isConnected, address } = usePeraWallet()
+  const { isConnected, address, peraWallet } = useWallet()
   const [activeTab, setActiveTab] = useState('overview')
   const [amount, setAmount] = useState('')
   const [isBuying, setIsBuying] = useState(false)
+  const [isSelling, setIsSelling] = useState(false)
+  const [tradeError, setTradeError] = useState<string | null>(null)
+  const [showSuccessModal, setShowSuccessModal] = useState(false)
+  const [successTradeData, setSuccessTradeData] = useState<{
+    tradeType: 'buy' | 'sell'
+    amount: number
+    price: number
+    totalAlgo: number
+    transactionId: string
+  } | null>(null)
 
   // Mock token data - in real app, this would come from API
   const token = {
@@ -68,23 +80,127 @@ const TokenDetails: React.FC = () => {
   ]
 
   const handleBuy = async () => {
-    if (!isConnected || !amount) return
-    
+    if (!isConnected || !address || !peraWallet || !amount) {
+      setTradeError('Please connect your Pera Wallet first')
+      return
+    }
+
     setIsBuying(true)
-    // Simulate buy transaction
-    await new Promise(resolve => setTimeout(resolve, 2000))
-    setIsBuying(false)
-    setAmount('')
+    setTradeError(null)
+    setShowSuccessModal(false)
+    setSuccessTradeData(null)
+
+    try {
+      const assetId = parseInt(id || '0')
+      const tokenAmount = Math.round(parseFloat(amount))
+      
+      if (isNaN(assetId) || assetId === 0) {
+        throw new Error('Invalid token ID')
+      }
+
+      if (isNaN(tokenAmount) || tokenAmount <= 0) {
+        throw new Error('Please enter a valid amount')
+      }
+
+      // Get token price
+      const token = await asaTradingService.getASADetails(assetId)
+      const pricePerToken = token.price
+
+      // For buy: we need a seller address (in real DEX, this comes from order book)
+      // For now, using a placeholder - in production, get from order book
+      const sellerAddress = token.creator || address
+
+      // Buy tokens using Pera Wallet (opens Pera Wallet popup)
+      const txId = await asaTradingService.buyASA({
+        sender: address,
+        peraWallet: peraWallet,
+        assetId: assetId,
+        amount: tokenAmount,
+        pricePerToken: pricePerToken,
+        sellerAddress: sellerAddress
+      })
+
+      // Calculate total ALGO spent
+      const totalAlgo = tokenAmount * pricePerToken
+
+      // Show success modal with confetti
+      setSuccessTradeData({
+        tradeType: 'buy',
+        amount: tokenAmount,
+        price: pricePerToken,
+        totalAlgo: totalAlgo,
+        transactionId: txId
+      })
+      setShowSuccessModal(true)
+      setAmount('')
+    } catch (error: any) {
+      console.error('Buy failed:', error)
+      setTradeError(error.message || 'Failed to buy tokens. Please try again.')
+    } finally {
+      setIsBuying(false)
+    }
   }
 
   const handleSell = async () => {
-    if (!isConnected || !amount) return
-    
-    setIsBuying(true)
-    // Simulate sell transaction
-    await new Promise(resolve => setTimeout(resolve, 2000))
-    setIsBuying(false)
-    setAmount('')
+    if (!isConnected || !address || !peraWallet || !amount) {
+      setTradeError('Please connect your Pera Wallet first')
+      return
+    }
+
+    setIsSelling(true)
+    setTradeError(null)
+    setShowSuccessModal(false)
+    setSuccessTradeData(null)
+
+    try {
+      const assetId = parseInt(id || '0')
+      const tokenAmount = Math.round(parseFloat(amount))
+      
+      if (isNaN(assetId) || assetId === 0) {
+        throw new Error('Invalid token ID')
+      }
+
+      if (isNaN(tokenAmount) || tokenAmount <= 0) {
+        throw new Error('Please enter a valid amount')
+      }
+
+      // Get token price
+      const token = await asaTradingService.getASADetails(assetId)
+      const pricePerToken = token.price
+
+      // For sell: we need a buyer address (in real DEX, this comes from order book)
+      // For now, using a placeholder - in production, get from order book
+      const buyerAddress = address // In real DEX, this would be from order book
+
+      // Sell tokens using Pera Wallet (opens Pera Wallet popup)
+      const txId = await asaTradingService.sellASA({
+        sender: address,
+        peraWallet: peraWallet,
+        assetId: assetId,
+        amount: tokenAmount,
+        pricePerToken: pricePerToken,
+        buyerAddress: buyerAddress
+      })
+
+      // Calculate total ALGO received
+      const totalAlgo = tokenAmount * pricePerToken
+
+      // Show success modal with confetti
+      setSuccessTradeData({
+        tradeType: 'sell',
+        amount: tokenAmount,
+        price: pricePerToken,
+        totalAlgo: totalAlgo,
+        transactionId: txId
+      })
+      setShowSuccessModal(true)
+      setAmount('')
+    } catch (error: any) {
+      console.error('Sell failed:', error)
+      setTradeError(error.message || 'Failed to sell tokens. Please try again.')
+    } finally {
+      setIsSelling(false)
+    }
   }
 
   const formatNumber = (num: number) => {
@@ -213,10 +329,16 @@ const TokenDetails: React.FC = () => {
               />
             </div>
             
+            {tradeError && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4">
+                <p className="text-red-400 text-sm">{tradeError}</p>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-4">
               <button
                 onClick={handleBuy}
-                disabled={isBuying || !amount}
+                disabled={isBuying || isSelling || !amount}
                 className="btn-primary flex items-center justify-center space-x-2 disabled:opacity-50"
               >
                 {isBuying ? (
@@ -236,10 +358,10 @@ const TokenDetails: React.FC = () => {
               
               <button
                 onClick={handleSell}
-                disabled={isBuying || !amount}
+                disabled={isBuying || isSelling || !amount}
                 className="btn-secondary flex items-center justify-center space-x-2 disabled:opacity-50"
               >
-                {isBuying ? (
+                {isSelling ? (
                   <div className="loading-dots w-4 h-4">
                     <div></div>
                     <div></div>
@@ -411,6 +533,24 @@ const TokenDetails: React.FC = () => {
           {activeTab === 'activity' && renderActivity()}
         </motion.div>
       </div>
+
+      {/* Trade Success Modal */}
+      {successTradeData && (
+        <TradeSuccessModal
+          isOpen={showSuccessModal}
+          onClose={() => {
+            setShowSuccessModal(false)
+            setSuccessTradeData(null)
+          }}
+          tradeType={successTradeData.tradeType}
+          amount={successTradeData.amount}
+          tokenSymbol={token.symbol}
+          price={successTradeData.price}
+          totalAlgo={successTradeData.totalAlgo}
+          transactionId={successTradeData.transactionId}
+          assetId={parseInt(id || '0') || undefined}
+        />
+      )}
     </div>
   )
 }

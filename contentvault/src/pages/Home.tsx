@@ -1,6 +1,6 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { motion } from 'framer-motion'
+import { motion, useScroll, useTransform, AnimatePresence } from 'framer-motion'
 import { 
   Rocket, 
   DollarSign, 
@@ -17,291 +17,417 @@ import {
   Lock,
   Unlock,
   TrendingDown,
-  BarChart3
+  BarChart3,
+  Sparkles,
+  Globe,
+  Wallet,
+  Coins,
+  ChevronDown
 } from 'lucide-react'
 import { YouTubeIcon, InstagramIcon, TwitterIcon, LinkedInIcon, TokenIcon } from '../assets/icons'
 
 const Home: React.FC = () => {
+  const { scrollYProgress } = useScroll()
+  const y = useTransform(scrollYProgress, [0, 1], ['0%', '50%'])
+  const opacity = useTransform(scrollYProgress, [0, 0.3], [1, 0])
+  
+  const [currentStat, setCurrentStat] = useState(0)
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 })
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentStat((prev) => (prev + 1) % 4)
+    }, 3000)
+    return () => clearInterval(interval)
+  }, [])
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      setMousePosition({ x: e.clientX, y: e.clientY })
+    }
+    window.addEventListener('mousemove', handleMouseMove)
+    return () => window.removeEventListener('mousemove', handleMouseMove)
+  }, [])
+
   const features = [
     {
       icon: Rocket,
       title: 'Creator Tokens',
-      description: 'Launch your own creator token like a cryptocurrency. Each creator gets their own coin with metrics, charts, and market cap.',
-      color: 'from-blue-500 to-cyan-500'
+      description: 'Launch your own creator token like a cryptocurrency. Each creator gets their own coin with real-time metrics, charts, and market cap.',
+      color: 'from-violet-500 to-fuchsia-500',
+      glow: 'shadow-violet-500/30'
     },
     {
       icon: DollarSign,
       title: 'Tokenize Content',
-      description: 'Tokenize your posts, YouTube videos, Instagram reels, and Twitter content. Each piece becomes a tradeable asset.',
-      color: 'from-green-500 to-emerald-500'
+      description: 'Tokenize your posts, YouTube videos, Instagram reels, and Twitter content. Each piece becomes a tradeable digital asset.',
+      color: 'from-emerald-500 to-teal-500',
+      glow: 'shadow-emerald-500/30'
     },
     {
       icon: Users,
       title: 'Premium Access',
-      description: 'Token holders get exclusive premium content, early access, and special perks only on our platform.',
-      color: 'from-purple-500 to-pink-500'
+      description: 'Token holders get exclusive premium content, early access, and special perks only available on our platform.',
+      color: 'from-purple-500 to-violet-500',
+      glow: 'shadow-purple-500/30'
     },
     {
       icon: Shield,
-      title: 'Creator Profile',
-      description: 'Showcase your roadmap, achievements, plans, and potential. Like a whitepaper for your creator journey.',
-      color: 'from-yellow-500 to-orange-500'
+      title: 'Verified Ownership',
+      description: 'Only content owners can tokenize their work. Connect your accounts and prove ownership before minting.',
+      color: 'from-cyan-500 to-blue-500',
+      glow: 'shadow-cyan-500/30'
     }
   ]
 
   const steps = [
     {
       number: '01',
-      title: 'Launch Your Token',
-      description: 'Connect your social accounts and launch your creator token. Set your vision, roadmap, and goals.',
-      icon: Rocket
+      title: 'Connect & Verify',
+      description: 'Connect your YouTube channel and verify ownership. Your content, your tokens - nobody else can tokenize your work.',
+      icon: Shield,
+      color: 'from-cyan-500 to-blue-600'
     },
     {
       number: '02',
       title: 'Tokenize Content',
-      description: 'Turn your posts, videos, and reels into tokens. Investors get premium access to exclusive content.',
-      icon: Star
+      description: 'Turn your videos and posts into tradeable tokens. Set your supply, price curve, and launch your creator economy.',
+      icon: Coins,
+      color: 'from-violet-500 to-purple-600'
     },
     {
       number: '03',
       title: 'Earn & Grow',
-      description: 'Earn from trading fees and content sales. Token holders get benefits. You control your content empire.',
-      icon: TrendingUp
+      description: 'Earn 5% from every trade. Token holders get exclusive benefits. Watch your creator empire grow with real value.',
+      icon: TrendingUp,
+      color: 'from-emerald-500 to-green-600'
     }
   ]
 
-  const stats = [
-    { label: 'Creator Tokens', value: 'Like Crypto Coins' },
-    { label: 'Content Tokens', value: 'Posts & Videos' },
-    { label: 'Premium Access', value: 'For Holders' },
-    { label: 'Creator Earnings', value: '85% Share' }
+  const liveStats = [
+    { label: 'Total Tokens Created', value: '1,247+', icon: Coins },
+    { label: 'Creators Onboarded', value: '500+', icon: Users },
+    { label: 'Trading Volume', value: '$2.4M+', icon: BarChart3 },
+    { label: 'Creator Earnings', value: '$180K+', icon: DollarSign }
+  ]
+
+  const platforms = [
+    { icon: YouTubeIcon, name: 'YouTube', status: 'API Connected', color: 'text-red-500' },
+    { icon: InstagramIcon, name: 'Instagram', status: 'Coming Soon', color: 'text-pink-500' },
+    { icon: TwitterIcon, name: 'Twitter/X', status: 'Coming Soon', color: 'text-blue-400' },
+    { icon: LinkedInIcon, name: 'LinkedIn', status: 'Coming Soon', color: 'text-blue-600' }
   ]
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-[#0a0a0f] overflow-hidden">
+      {/* Animated Background */}
+      <div className="fixed inset-0 pointer-events-none">
+        {/* Gradient mesh */}
+        <div 
+          className="absolute inset-0 opacity-40"
+          style={{
+            background: `
+              radial-gradient(ellipse 80% 50% at 20% 40%, rgba(120, 0, 255, 0.15), transparent),
+              radial-gradient(ellipse 60% 40% at 80% 60%, rgba(0, 200, 255, 0.1), transparent),
+              radial-gradient(ellipse 40% 60% at 50% 80%, rgba(255, 0, 128, 0.08), transparent)
+            `
+          }}
+        />
+        
+        {/* Animated grid */}
+        <div 
+          className="absolute inset-0 opacity-[0.03]"
+          style={{
+            backgroundImage: `
+              linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)
+            `,
+            backgroundSize: '100px 100px'
+          }}
+        />
+        
+        {/* Floating particles */}
+        {[...Array(30)].map((_, i) => (
+          <motion.div
+            key={i}
+            className="absolute w-1 h-1 bg-white/20 rounded-full"
+            initial={{
+              x: Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 1000),
+              y: Math.random() * (typeof window !== 'undefined' ? window.innerHeight : 1000),
+            }}
+            animate={{
+              y: [null, Math.random() * -200 - 100],
+              opacity: [0, 1, 0],
+            }}
+            transition={{
+              duration: Math.random() * 10 + 10,
+              repeat: Infinity,
+              ease: 'linear',
+              delay: Math.random() * 5,
+            }}
+          />
+        ))}
+        
+        {/* Cursor glow effect */}
+        <motion.div
+          className="absolute w-96 h-96 rounded-full pointer-events-none"
+          style={{
+            background: 'radial-gradient(circle, rgba(120, 0, 255, 0.1) 0%, transparent 70%)',
+            left: mousePosition.x - 192,
+            top: mousePosition.y - 192,
+          }}
+          animate={{
+            scale: [1, 1.1, 1],
+          }}
+          transition={{
+            duration: 2,
+            repeat: Infinity,
+            ease: 'easeInOut',
+          }}
+        />
+      </div>
+
       {/* Hero Section */}
-      <section className="relative overflow-hidden pt-20 pb-32">
-        {/* Enhanced Background Effects */}
-        <div className="absolute inset-0 overflow-hidden">
-          {/* Main gradient orbs */}
+      <section className="relative min-h-screen flex items-center justify-center px-4 py-20">
+        <motion.div style={{ y, opacity }} className="absolute inset-0">
+          {/* Large gradient orbs */}
           <motion.div 
-            className="absolute top-1/4 left-1/4 w-96 h-96 bg-gradient-to-r from-blue-500/30 to-cyan-500/20 rounded-full blur-3xl"
+            className="absolute top-1/4 left-1/4 w-[600px] h-[600px] bg-gradient-to-r from-violet-600/20 to-fuchsia-600/10 rounded-full blur-[100px]"
             animate={{ 
               scale: [1, 1.2, 1],
-              opacity: [0.3, 0.5, 0.3],
               rotate: [0, 180, 360]
             }}
-            transition={{ 
-              duration: 20, 
-              repeat: Infinity,
-              ease: "easeInOut"
-            }}
+            transition={{ duration: 30, repeat: Infinity, ease: "linear" }}
           />
           <motion.div 
-            className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-gradient-to-r from-purple-500/30 to-pink-500/20 rounded-full blur-3xl"
+            className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-gradient-to-r from-cyan-600/20 to-blue-600/10 rounded-full blur-[100px]"
             animate={{ 
               scale: [1.2, 1, 1.2],
-              opacity: [0.2, 0.4, 0.2],
               rotate: [360, 180, 0]
             }}
-            transition={{ 
-              duration: 25, 
-              repeat: Infinity,
-              ease: "easeInOut",
-              delay: 2
-            }}
+            transition={{ duration: 25, repeat: Infinity, ease: "linear" }}
           />
-          
-          {/* Floating particles */}
-          <motion.div 
-            className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-gradient-to-r from-pink-500/20 to-yellow-500/10 rounded-full blur-2xl"
-            animate={{ 
-              y: [-20, 20, -20],
-              x: [-10, 10, -10],
-              scale: [1, 1.1, 1]
-            }}
-            transition={{ 
-              duration: 8, 
-              repeat: Infinity,
-              ease: "easeInOut"
-            }}
-          />
-          
-          {/* Smaller accent orbs */}
-          <motion.div 
-            className="absolute top-3/4 left-1/6 w-32 h-32 bg-gradient-to-r from-yellow-500/25 to-orange-500/15 rounded-full blur-xl"
-            animate={{ 
-              y: [0, -30, 0],
-              x: [0, 15, 0],
-              rotate: [0, 90, 0]
-            }}
-            transition={{ 
-              duration: 12, 
-              repeat: Infinity,
-              ease: "easeInOut",
-              delay: 1
-            }}
-          />
-          <motion.div 
-            className="absolute bottom-1/6 right-1/6 w-48 h-48 bg-gradient-to-r from-cyan-500/25 to-blue-500/15 rounded-full blur-2xl"
-            animate={{ 
-              y: [0, 25, 0],
-              x: [0, -20, 0],
-              rotate: [0, -90, 0]
-            }}
-            transition={{ 
-              duration: 15, 
-              repeat: Infinity,
-              ease: "easeInOut",
-              delay: 3
-            }}
-          />
-          
-          {/* Animated grid pattern */}
-          <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:50px_50px] animate-pulse"></div>
-        </div>
+        </motion.div>
 
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center">
-            <motion.div
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, ease: "easeOut" }}
-              className="mb-12"
-            >
-              <motion.h1 
-                className="text-5xl md:text-7xl lg:text-8xl font-display font-bold text-white mb-8"
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 1, delay: 0.2 }}
+        <div className="relative max-w-7xl mx-auto text-center z-10">
+          {/* Badge */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6 }}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 backdrop-blur-sm mb-8"
+          >
+            <Sparkles className="w-4 h-4 text-yellow-400" />
+            <span className="text-sm text-gray-300">Powered by Algorand Blockchain</span>
+            <span className="px-2 py-0.5 text-xs font-bold bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-full">LIVE</span>
+          </motion.div>
+
+          {/* Main Headline */}
+          <motion.h1 
+            className="text-5xl md:text-7xl lg:text-8xl font-bold tracking-tight mb-8"
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.2 }}
+          >
+            <span className="text-white">Own Your</span>
+            <br />
+            <span className="bg-gradient-to-r from-violet-400 via-fuchsia-400 to-cyan-400 bg-clip-text text-transparent">
+              Content Empire
+            </span>
+          </motion.h1>
+
+          {/* Subheadline */}
+          <motion.p 
+            className="text-xl md:text-2xl text-gray-400 max-w-3xl mx-auto mb-12 leading-relaxed"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.4 }}
+          >
+            Transform your YouTube videos into tradeable tokens. 
+            <span className="text-white font-medium"> Only you can tokenize your content.</span>
+            <br />
+            <span className="text-cyan-400">Fans invest. You earn 5% on every trade.</span>
+          </motion.p>
+
+          {/* CTA Buttons */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.6 }}
+            className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-16"
+          >
+            <Link to="/tokenize">
+              <motion.button
+                className="group relative px-8 py-4 bg-gradient-to-r from-violet-600 to-fuchsia-600 rounded-2xl text-white font-bold text-lg overflow-hidden"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
               >
-                <motion.span 
-                  className="block"
-                  initial={{ opacity: 0, x: -50 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.8, delay: 0.3 }}
-                >
-                  Tokenize Your
-                </motion.span>
-                <motion.span 
-                  className="gradient-text block"
-                  initial={{ opacity: 0, x: 50 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.8, delay: 0.5 }}
-                >
-                  Content Empire
-                </motion.span>
-              </motion.h1>
-              
-              <motion.p 
-                className="text-xl md:text-2xl lg:text-3xl text-gray-300 max-w-5xl mx-auto leading-relaxed"
+                <span className="relative z-10 flex items-center gap-2">
+                  <Rocket className="w-5 h-5" />
+                  Start Tokenizing
+                  <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                </span>
+                <motion.div
+                  className="absolute inset-0 bg-gradient-to-r from-fuchsia-600 to-violet-600"
+                  initial={{ x: '100%' }}
+                  whileHover={{ x: 0 }}
+                  transition={{ duration: 0.3 }}
+                />
+              </motion.button>
+            </Link>
+            
+            <Link to="/marketplace">
+              <motion.button
+                className="px-8 py-4 border-2 border-white/20 rounded-2xl text-white font-bold text-lg hover:bg-white/5 transition-colors flex items-center gap-2"
+                whileHover={{ scale: 1.05, borderColor: 'rgba(255,255,255,0.4)' }}
+                whileTap={{ scale: 0.95 }}
+              >
+                <BarChart3 className="w-5 h-5" />
+                Explore Marketplace
+              </motion.button>
+            </Link>
+          </motion.div>
+
+          {/* Platform Icons */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.8 }}
+            className="flex justify-center items-center gap-8 mb-16"
+          >
+            {platforms.map((platform, index) => (
+              <motion.div
+                key={platform.name}
+                className="group flex flex-col items-center gap-2"
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 1 + index * 0.1 }}
+                whileHover={{ y: -5 }}
+              >
+                <div className={`p-3 rounded-xl bg-white/5 border border-white/10 group-hover:border-white/30 transition-colors ${platform.color}`}>
+                  <platform.icon className="w-8 h-8" />
+                </div>
+                <span className="text-xs text-gray-500">{platform.status}</span>
+              </motion.div>
+            ))}
+          </motion.div>
+
+          {/* Live Stats Ticker */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 1.2 }}
+            className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl mx-auto"
+          >
+            {liveStats.map((stat, index) => (
+              <motion.div
+                key={stat.label}
+                className="p-4 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-sm"
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8, delay: 0.7 }}
+                transition={{ delay: 1.4 + index * 0.1 }}
+                whileHover={{ scale: 1.05, borderColor: 'rgba(255,255,255,0.3)' }}
               >
-                Create your creator token, tokenize your posts, videos & reels. 
-                <br className="hidden md:block" />
-                <span className="text-white font-semibold">Investors get premium content access.</span> 
-                <br className="hidden md:block" />
-                <span className="text-cyan-400 font-semibold">Holders unlock exclusive benefits.</span>
-              </motion.p>
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.9 }}
-              className="flex flex-col sm:flex-row gap-6 justify-center items-center mb-16"
-            >
-              <motion.div
-                whileHover={{ scale: 1.05, y: -2 }}
-                whileTap={{ scale: 0.95 }}
-                transition={{ type: "spring", stiffness: 300, damping: 20 }}
-              >
-                <Link to="/launchpad" className="btn-primary text-lg px-10 py-5 flex items-center space-x-3 shadow-2xl hover:shadow-blue-500/25 transition-all duration-300">
-                  <Rocket className="w-6 h-6" />
-                  <span>Launch Your Token</span>
-                  <ArrowRight className="w-6 h-6" />
-                </Link>
+                <stat.icon className="w-6 h-6 text-violet-400 mb-2" />
+                <div className="text-2xl font-bold text-white">{stat.value}</div>
+                <div className="text-xs text-gray-500">{stat.label}</div>
               </motion.div>
-              
-              <motion.div
-                whileHover={{ scale: 1.05, y: -2 }}
-                whileTap={{ scale: 0.95 }}
-                transition={{ type: "spring", stiffness: 300, damping: 20 }}
-              >
-                <Link to="/creator-marketplace" className="btn-secondary text-lg px-10 py-5 flex items-center space-x-3 shadow-2xl hover:shadow-purple-500/25 transition-all duration-300">
-                  <BarChart3 className="w-6 h-6" />
-                  <span>Trade Tokens</span>
-                </Link>
-              </motion.div>
-            </motion.div>
+            ))}
+          </motion.div>
 
-            {/* Enhanced Social Platform Icons */}
+          {/* Scroll indicator */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 2 }}
+            className="absolute bottom-8 left-1/2 transform -translate-x-1/2"
+          >
             <motion.div
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 1.1 }}
-              className="flex justify-center items-center space-x-8 mb-20"
+              animate={{ y: [0, 10, 0] }}
+              transition={{ duration: 2, repeat: Infinity }}
+              className="flex flex-col items-center gap-2 text-gray-500"
             >
-              <div className="flex items-center space-x-3 text-gray-400">
-                <span className="text-sm font-medium">Connect with:</span>
-              </div>
-              <div className="flex items-center space-x-8">
-                {[
-                  { icon: YouTubeIcon, href: "https://youtube.com", color: "hover:text-red-500" },
-                  { icon: InstagramIcon, href: "https://instagram.com", color: "hover:text-pink-500" },
-                  { icon: TwitterIcon, href: "https://twitter.com", color: "hover:text-blue-400" },
-                  { icon: LinkedInIcon, href: "https://linkedin.com", color: "hover:text-blue-600" }
-                ].map((platform, index) => (
-                  <motion.a
-                    key={index}
-                    href={platform.href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={`${platform.color} transition-all duration-300 hover:scale-125`}
-                    whileHover={{ y: -5 }}
-                    whileTap={{ scale: 0.9 }}
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ duration: 0.5, delay: 1.3 + index * 0.1 }}
-                  >
-                    <platform.icon className="w-10 h-10" />
-                  </motion.a>
-                ))}
-              </div>
+              <span className="text-sm">Scroll to explore</span>
+              <ChevronDown className="w-5 h-5" />
             </motion.div>
+          </motion.div>
+        </div>
+      </section>
 
-            {/* Enhanced Stats */}
+      {/* Problem/Solution Section */}
+      <section className="relative py-32 px-4">
+        <div className="max-w-7xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="text-center mb-20"
+          >
+            <h2 className="text-4xl md:text-6xl font-bold text-white mb-6">
+              The Creator Economy is <span className="text-red-500">Broken</span>
+            </h2>
+            <p className="text-xl text-gray-400 max-w-2xl mx-auto">
+              Platforms profit billions while creators struggle. We're fixing that.
+            </p>
+          </motion.div>
+
+          <div className="grid lg:grid-cols-2 gap-12">
+            {/* Problems */}
             <motion.div
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 1.5 }}
-              className="grid grid-cols-2 md:grid-cols-4 gap-8 max-w-4xl mx-auto"
+              initial={{ opacity: 0, x: -50 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              className="space-y-6"
             >
-              {stats.map((stat, index) => (
+              <div className="flex items-center gap-3 mb-8">
+                <div className="p-2 rounded-lg bg-red-500/20">
+                  <XCircle className="w-6 h-6 text-red-500" />
+                </div>
+                <h3 className="text-2xl font-bold text-red-400">The Problems</h3>
+              </div>
+
+              {[
+                { title: 'Platforms Take 30-50%', desc: 'YouTube, Instagram take massive cuts. Creators get pennies.' },
+                { title: 'Fans Can\'t Invest', desc: 'Supporters get nothing in return. Just likes and comments.' },
+                { title: 'No True Ownership', desc: 'Platform algorithms control your audience and income.' }
+              ].map((problem, i) => (
                 <motion.div
-                  key={index}
-                  className="text-center"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.6, delay: 1.7 + index * 0.1 }}
-                  whileHover={{ scale: 1.05, y: -5 }}
+                  key={i}
+                  className="p-6 rounded-2xl bg-red-500/5 border border-red-500/20 hover:border-red-500/40 transition-all"
+                  whileHover={{ x: 10 }}
                 >
-                  <motion.div 
-                    className="text-3xl md:text-4xl font-bold text-white mb-2"
-                    animate={{ 
-                      scale: [1, 1.05, 1],
-                    }}
-                    transition={{ 
-                      duration: 2, 
-                      repeat: Infinity,
-                      delay: index * 0.2
-                    }}
-                  >
-                    {stat.value}
-                  </motion.div>
-                  <div className="text-gray-400 text-sm font-medium">{stat.label}</div>
+                  <h4 className="text-lg font-semibold text-white mb-2">{problem.title}</h4>
+                  <p className="text-gray-400">{problem.desc}</p>
+                </motion.div>
+              ))}
+            </motion.div>
+
+            {/* Solutions */}
+            <motion.div
+              initial={{ opacity: 0, x: 50 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              className="space-y-6"
+            >
+              <div className="flex items-center gap-3 mb-8">
+                <div className="p-2 rounded-lg bg-green-500/20">
+                  <CheckCircle className="w-6 h-6 text-green-500" />
+                </div>
+                <h3 className="text-2xl font-bold text-green-400">Our Solution</h3>
+              </div>
+
+              {[
+                { title: 'Earn 5% on Every Trade', desc: 'Your fans buy & sell your tokens. You earn from every transaction.' },
+                { title: 'Fans Become Investors', desc: 'Token holders unlock premium content. Real value for real support.' },
+                { title: 'Verified Ownership', desc: 'Only YOU can tokenize YOUR content. Connect channel = prove ownership.' }
+              ].map((solution, i) => (
+                <motion.div
+                  key={i}
+                  className="p-6 rounded-2xl bg-green-500/5 border border-green-500/20 hover:border-green-500/40 transition-all"
+                  whileHover={{ x: 10 }}
+                >
+                  <h4 className="text-lg font-semibold text-white mb-2">{solution.title}</h4>
+                  <p className="text-gray-400">{solution.desc}</p>
                 </motion.div>
               ))}
             </motion.div>
@@ -309,231 +435,24 @@ const Home: React.FC = () => {
         </div>
       </section>
 
-      {/* Problem/Solution Section */}
-      <section className="py-24 relative overflow-hidden bg-black/20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      {/* Features Grid */}
+      <section className="relative py-32 px-4">
+        <div className="max-w-7xl mx-auto">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            transition={{ duration: 0.6 }}
-            className="text-center mb-16"
+            className="text-center mb-20"
           >
-            <h2 className="text-4xl md:text-5xl font-bold text-white mb-4">
-              The Creator Economy is <span className="text-red-400">Broken</span>
+            <h2 className="text-4xl md:text-6xl font-bold text-white mb-6">
+              Built for <span className="bg-gradient-to-r from-violet-400 to-cyan-400 bg-clip-text text-transparent">Creators</span>
             </h2>
-            <p className="text-xl text-gray-300 max-w-3xl mx-auto">
-              Creators work hard but platforms take most of the revenue. Fans want to support but get nothing in return. 
-              It's time for a change.
+            <p className="text-xl text-gray-400 max-w-2xl mx-auto">
+              Everything you need to launch your creator economy on blockchain.
             </p>
           </motion.div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 mb-24">
-            {/* Problem Side */}
-            <motion.div
-              initial={{ opacity: 0, x: -50 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.6 }}
-              className="space-y-6"
-            >
-              <div className="flex items-center space-x-3 mb-8">
-                <XCircle className="w-8 h-8 text-red-400" />
-                <h3 className="text-3xl font-bold text-red-400">The Problems</h3>
-              </div>
-
-              <motion.div 
-                className="card bg-red-500/5 border-red-500/20 hover:border-red-500/40 transition-all"
-                whileHover={{ scale: 1.02 }}
-              >
-                <div className="flex items-start space-x-4">
-                  <TrendingDown className="w-6 h-6 text-red-400 flex-shrink-0 mt-1" />
-                  <div>
-                    <h4 className="text-lg font-semibold text-white mb-2">Platforms Take 30-50% Revenue</h4>
-                    <p className="text-gray-400">YouTube, Instagram, and other platforms take a huge cut. Creators get pennies while platforms profit billions.</p>
-                  </div>
-                </div>
-              </motion.div>
-
-              <motion.div 
-                className="card bg-red-500/5 border-red-500/20 hover:border-red-500/40 transition-all"
-                whileHover={{ scale: 1.02 }}
-              >
-                <div className="flex items-start space-x-4">
-                  <Lock className="w-6 h-6 text-red-400 flex-shrink-0 mt-1" />
-                  <div>
-                    <h4 className="text-lg font-semibold text-white mb-2">Fans Can't Really Invest</h4>
-                    <p className="text-gray-400">Fans support creators but get nothing in return. No ownership, no benefits, just likes and comments.</p>
-                  </div>
-                </div>
-              </motion.div>
-
-              <motion.div 
-                className="card bg-red-500/5 border-red-500/20 hover:border-red-500/40 transition-all"
-                whileHover={{ scale: 1.02 }}
-              >
-                <div className="flex items-start space-x-4">
-                  <AlertCircle className="w-6 h-6 text-red-400 flex-shrink-0 mt-1" />
-                  <div>
-                    <h4 className="text-lg font-semibold text-white mb-2">No Direct Creator-Fan Relationship</h4>
-                    <p className="text-gray-400">Everything goes through platforms. Creators don't own their audience or revenue streams.</p>
-                  </div>
-                </div>
-              </motion.div>
-            </motion.div>
-
-            {/* Solution Side */}
-            <motion.div
-              initial={{ opacity: 0, x: 50 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.6 }}
-              className="space-y-6"
-            >
-              <div className="flex items-center space-x-3 mb-8">
-                <CheckCircle className="w-8 h-8 text-green-400" />
-                <h3 className="text-3xl font-bold text-green-400">Our Solution</h3>
-              </div>
-
-              <motion.div 
-                className="card bg-green-500/5 border-green-500/20 hover:border-green-500/40 transition-all"
-                whileHover={{ scale: 1.02 }}
-              >
-                <div className="flex items-start space-x-4">
-                  <Rocket className="w-6 h-6 text-green-400 flex-shrink-0 mt-1" />
-                  <div>
-                    <h4 className="text-lg font-semibold text-white mb-2">Launch Your Own Creator Token</h4>
-                    <p className="text-gray-400">Create your own cryptocurrency-like token. Set your own price, market cap, and trading rules. You're in control.</p>
-                  </div>
-                </div>
-              </motion.div>
-
-              <motion.div 
-                className="card bg-green-500/5 border-green-500/20 hover:border-green-500/40 transition-all"
-                whileHover={{ scale: 1.02 }}
-              >
-                <div className="flex items-start space-x-4">
-                  <Unlock className="w-6 h-6 text-green-400 flex-shrink-0 mt-1" />
-                  <div>
-                    <h4 className="text-lg font-semibold text-white mb-2">Fans Become Investors & Get Benefits</h4>
-                    <p className="text-gray-400">Token holders unlock premium content, early access, and exclusive perks. True fans get rewarded.</p>
-                  </div>
-                </div>
-              </motion.div>
-
-              <motion.div 
-                className="card bg-green-500/5 border-green-500/20 hover:border-green-500/40 transition-all"
-                whileHover={{ scale: 1.02 }}
-              >
-                <div className="flex items-start space-x-4">
-                  <DollarSign className="w-6 h-6 text-green-400 flex-shrink-0 mt-1" />
-                  <div>
-                    <h4 className="text-lg font-semibold text-white mb-2">85% Revenue Share + Trading Fees</h4>
-                    <p className="text-gray-400">Keep 85% of all earnings. Earn from content sales AND trading fees. Premium content hosted on CreatorVault only.</p>
-                  </div>
-                </div>
-              </motion.div>
-            </motion.div>
-          </div>
-
-          {/* Premium Content Explanation */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.6 }}
-            className="card bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-primary-500/30 p-8"
-          >
-            <div className="flex flex-col md:flex-row items-start space-y-6 md:space-y-0 md:space-x-6">
-              <motion.div 
-                className="w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-500 rounded-2xl flex items-center justify-center flex-shrink-0"
-                animate={{ 
-                  scale: [1, 1.1, 1],
-                  rotate: [0, 5, -5, 0]
-                }}
-                transition={{ 
-                  duration: 3,
-                  repeat: Infinity,
-                  ease: "easeInOut"
-                }}
-              >
-                <Lock className="w-8 h-8 text-white" />
-              </motion.div>
-              <div>
-                <h3 className="text-2xl md:text-3xl font-bold text-white mb-4">Premium Content Lives on CreatorVault Only</h3>
-                <p className="text-gray-300 text-lg mb-4">
-                  When you tokenize content, <strong>premium versions are hosted exclusively on our platform</strong>. 
-                  Only token holders can unlock and access this content. This creates real value for your tokens and keeps your community engaged.
-                </p>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-                  <motion.div 
-                    className="flex items-center space-x-3"
-                    whileHover={{ x: 5 }}
-                  >
-                    <CheckCircle className="w-5 h-5 text-green-400" />
-                    <span className="text-gray-300">Exclusive premium videos</span>
-                  </motion.div>
-                  <motion.div 
-                    className="flex items-center space-x-3"
-                    whileHover={{ x: 5 }}
-                  >
-                    <CheckCircle className="w-5 h-5 text-green-400" />
-                    <span className="text-gray-300">Behind-the-scenes content</span>
-                  </motion.div>
-                  <motion.div 
-                    className="flex items-center space-x-3"
-                    whileHover={{ x: 5 }}
-                  >
-                    <CheckCircle className="w-5 h-5 text-green-400" />
-                    <span className="text-gray-300">Early access releases</span>
-                  </motion.div>
-                  <motion.div 
-                    className="flex items-center space-x-3"
-                    whileHover={{ x: 5 }}
-                  >
-                    <CheckCircle className="w-5 h-5 text-green-400" />
-                    <span className="text-gray-300">Exclusive tutorials</span>
-                  </motion.div>
-                  <motion.div 
-                    className="flex items-center space-x-3"
-                    whileHover={{ x: 5 }}
-                  >
-                    <CheckCircle className="w-5 h-5 text-green-400" />
-                    <span className="text-gray-300">Community perks</span>
-                  </motion.div>
-                  <motion.div 
-                    className="flex items-center space-x-3"
-                    whileHover={{ x: 5 }}
-                  >
-                    <CheckCircle className="w-5 h-5 text-green-400" />
-                    <span className="text-gray-300">1-on-1 sessions</span>
-                  </motion.div>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        </div>
-      </section>
-
-      {/* Features Section */}
-      <section className="py-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-            viewport={{ once: true }}
-            className="text-center mb-16"
-          >
-            <h2 className="text-4xl md:text-5xl font-display font-bold text-white mb-6">
-              Why Choose <span className="gradient-text">CreatorVault</span>?
-            </h2>
-            <p className="text-xl text-gray-300 max-w-3xl mx-auto">
-              Built for creators, by creators. The all-in-one platform for content tokenization and monetization.
-            </p>
-          </motion.div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
             {features.map((feature, index) => {
               const Icon = feature.icon
               return (
@@ -541,25 +460,21 @@ const Home: React.FC = () => {
                   key={index}
                   initial={{ opacity: 0, y: 30 }}
                   whileInView={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.8, delay: index * 0.15 }}
                   viewport={{ once: true }}
-                  className="card group card-hover"
-                  whileHover={{ 
-                    scale: 1.05, 
-                    y: -10,
-                    transition: { type: "spring", stiffness: 300, damping: 20 }
-                  }}
+                  transition={{ delay: index * 0.1 }}
+                  className={`group p-8 rounded-3xl bg-white/5 border border-white/10 hover:border-white/30 transition-all duration-500 hover:shadow-2xl ${feature.glow}`}
+                  whileHover={{ y: -10 }}
                 >
                   <motion.div 
-                    className={`w-16 h-16 bg-gradient-to-r ${feature.color} rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform shadow-lg`}
-                    whileHover={{ rotate: 5 }}
+                    className={`w-14 h-14 rounded-2xl bg-gradient-to-r ${feature.color} flex items-center justify-center mb-6`}
+                    whileHover={{ rotate: 5, scale: 1.1 }}
                   >
-                    <Icon className="w-8 h-8 text-white" />
+                    <Icon className="w-7 h-7 text-white" />
                   </motion.div>
-                  <h3 className="text-xl font-bold text-white mb-4 group-hover:text-cyan-400 transition-colors">
+                  <h3 className="text-xl font-bold text-white mb-3 group-hover:text-transparent group-hover:bg-gradient-to-r group-hover:from-violet-400 group-hover:to-cyan-400 group-hover:bg-clip-text transition-all">
                     {feature.title}
                   </h3>
-                  <p className="text-gray-400 leading-relaxed group-hover:text-gray-300 transition-colors">
+                  <p className="text-gray-400 leading-relaxed">
                     {feature.description}
                   </p>
                 </motion.div>
@@ -569,25 +484,27 @@ const Home: React.FC = () => {
         </div>
       </section>
 
-      {/* How It Works Section */}
-      <section className="py-20 bg-white/5">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      {/* How It Works */}
+      <section className="relative py-32 px-4 bg-gradient-to-b from-transparent via-violet-950/20 to-transparent">
+        <div className="max-w-7xl mx-auto">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
             viewport={{ once: true }}
-            className="text-center mb-16"
+            className="text-center mb-20"
           >
-            <h2 className="text-4xl md:text-5xl font-display font-bold text-white mb-6">
-              How It <span className="gradient-text">Works</span>
+            <h2 className="text-4xl md:text-6xl font-bold text-white mb-6">
+              How It <span className="bg-gradient-to-r from-violet-400 to-purple-400 bg-clip-text text-transparent">Works</span>
             </h2>
-            <p className="text-xl text-gray-300 max-w-3xl mx-auto">
-              Launch your creator economy in three simple steps. Build your content empire today.
+            <p className="text-xl text-gray-400 max-w-2xl mx-auto">
+              Launch your creator economy in three simple steps.
             </p>
           </motion.div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
+          <div className="grid md:grid-cols-3 gap-8 relative">
+            {/* Connection line */}
+            <div className="hidden md:block absolute top-1/2 left-1/4 right-1/4 h-0.5 bg-gradient-to-r from-cyan-500 via-violet-500 to-green-500 opacity-30" />
+            
             {steps.map((step, index) => {
               const Icon = step.icon
               return (
@@ -595,43 +512,31 @@ const Home: React.FC = () => {
                   key={index}
                   initial={{ opacity: 0, y: 30 }}
                   whileInView={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.8, delay: index * 0.2 }}
                   viewport={{ once: true }}
+                  transition={{ delay: index * 0.2 }}
                   className="relative"
-                  whileHover={{ 
-                    scale: 1.02,
-                    transition: { type: "spring", stiffness: 300, damping: 20 }
-                  }}
                 >
-                  <div className="card text-center group hover:shadow-2xl hover:shadow-primary-500/10 transition-all duration-300">
+                  <div className="p-8 rounded-3xl bg-white/5 border border-white/10 hover:border-white/30 transition-all text-center group">
+                    {/* Step number */}
                     <motion.div 
-                      className="absolute -top-6 left-1/2 transform -translate-x-1/2"
-                      whileHover={{ scale: 1.1, rotate: 5 }}
+                      className="absolute -top-4 left-1/2 transform -translate-x-1/2"
+                      whileHover={{ scale: 1.1 }}
                     >
-                      <div className="w-12 h-12 bg-gradient-to-r from-primary-500 to-secondary-500 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-lg">
+                      <div className={`w-10 h-10 rounded-full bg-gradient-to-r ${step.color} flex items-center justify-center text-white font-bold text-sm shadow-lg`}>
                         {step.number}
                       </div>
                     </motion.div>
                     
                     <motion.div 
-                      className="w-20 h-20 bg-gradient-to-r from-primary-500/20 to-secondary-500/20 rounded-3xl flex items-center justify-center mx-auto mb-8 mt-6 group-hover:from-primary-500/30 group-hover:to-secondary-500/30 transition-all duration-300"
-                      whileHover={{ rotate: 10, scale: 1.1 }}
+                      className={`w-20 h-20 rounded-3xl bg-gradient-to-r ${step.color} bg-opacity-20 flex items-center justify-center mx-auto mb-6 mt-4`}
+                      whileHover={{ rotate: 5, scale: 1.05 }}
                     >
-                      <Icon className="w-10 h-10 text-primary-400 group-hover:text-primary-300 transition-colors" />
+                      <Icon className="w-10 h-10 text-white" />
                     </motion.div>
                     
-                    <h3 className="text-2xl font-bold text-white mb-4 group-hover:text-cyan-400 transition-colors">
-                      {step.title}
-                    </h3>
-                    <p className="text-gray-400 leading-relaxed group-hover:text-gray-300 transition-colors">
-                      {step.description}
-                    </p>
+                    <h3 className="text-2xl font-bold text-white mb-4">{step.title}</h3>
+                    <p className="text-gray-400 leading-relaxed">{step.description}</p>
                   </div>
-                  
-                  {/* Enhanced Connector Line */}
-                  {index < steps.length - 1 && (
-                    <div className="hidden md:block absolute top-1/2 -right-6 w-12 h-0.5 bg-gradient-to-r from-primary-500/50 to-transparent"></div>
-                  )}
                 </motion.div>
               )
             })}
@@ -639,94 +544,78 @@ const Home: React.FC = () => {
         </div>
       </section>
 
-      {/* Enhanced CTA Section */}
-      <section className="py-24 relative overflow-hidden">
-        {/* Background Effects */}
-        <div className="absolute inset-0">
-          <motion.div 
-            className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-gradient-to-r from-primary-500/20 to-secondary-500/20 rounded-full blur-3xl"
-            animate={{ 
-              scale: [1, 1.2, 1],
-              opacity: [0.3, 0.5, 0.3]
-            }}
-            transition={{ 
-              duration: 8, 
-              repeat: Infinity,
-              ease: "easeInOut"
-            }}
-          />
-        </div>
-        
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center relative">
+      {/* Final CTA */}
+      <section className="relative py-32 px-4">
+        <div className="max-w-5xl mx-auto text-center">
+          {/* Glow effect */}
+          <div className="absolute inset-0 flex items-center justify-center">
+            <motion.div
+              className="w-[600px] h-[600px] bg-gradient-to-r from-violet-600/20 to-fuchsia-600/20 rounded-full blur-[120px]"
+              animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0.5, 0.3] }}
+              transition={{ duration: 8, repeat: Infinity }}
+            />
+          </div>
+          
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8 }}
             viewport={{ once: true }}
-            className="card group hover:shadow-2xl hover:shadow-primary-500/20 transition-all duration-500"
+            className="relative z-10 p-12 rounded-[40px] bg-gradient-to-r from-white/5 to-white/10 border border-white/20 backdrop-blur-xl"
           >
             <motion.div 
-              className="w-24 h-24 bg-gradient-to-r from-primary-500 to-secondary-500 rounded-3xl flex items-center justify-center mx-auto mb-8 group-hover:scale-110 transition-transform duration-300"
-              whileHover={{ rotate: 10 }}
+              className="w-20 h-20 mx-auto mb-8 rounded-3xl bg-gradient-to-r from-violet-500 to-fuchsia-500 flex items-center justify-center"
+              animate={{ rotate: [0, 5, -5, 0] }}
+              transition={{ duration: 4, repeat: Infinity }}
             >
-              <TokenIcon className="w-12 h-12 text-white" />
+              <TokenIcon className="w-10 h-10 text-white" />
             </motion.div>
             
-            <motion.h2 
-              className="text-4xl md:text-6xl font-display font-bold text-white mb-8"
-              initial={{ opacity: 0, scale: 0.9 }}
-              whileInView={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.8, delay: 0.2 }}
-              viewport={{ once: true }}
-            >
-              Ready to Build Your <span className="gradient-text">Content Empire</span>?
-            </motion.h2>
+            <h2 className="text-4xl md:text-6xl font-bold text-white mb-6">
+              Ready to Own Your <br />
+              <span className="bg-gradient-to-r from-violet-400 via-fuchsia-400 to-cyan-400 bg-clip-text text-transparent">
+                Content Empire?
+              </span>
+            </h2>
             
-            <motion.p 
-              className="text-xl md:text-2xl text-gray-300 mb-12 max-w-3xl mx-auto leading-relaxed"
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.4 }}
-              viewport={{ once: true }}
-            >
-              Join thousands of creators who are tokenizing their content and building their own economies. 
-              <br className="hidden md:block" />
-              <span className="text-white font-semibold">Launch your token today</span> and give your community premium access.
-            </motion.p>
+            <p className="text-xl text-gray-400 mb-10 max-w-2xl mx-auto">
+              Join the creator revolution. Tokenize your content, earn from every trade, 
+              and give your fans real value.
+            </p>
             
-            <motion.div 
-              className="flex flex-col sm:flex-row gap-6 justify-center"
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.6 }}
-              viewport={{ once: true }}
-            >
-              <motion.div
-                whileHover={{ scale: 1.05, y: -2 }}
-                whileTap={{ scale: 0.95 }}
-                transition={{ type: "spring", stiffness: 300, damping: 20 }}
-              >
-                <Link to="/launchpad" className="btn-primary text-lg px-10 py-5 flex items-center justify-center space-x-3 shadow-2xl hover:shadow-primary-500/25 transition-all duration-300">
-                  <Rocket className="w-6 h-6" />
-                  <span>Launch Your Token</span>
-                  <ArrowRight className="w-6 h-6" />
-                </Link>
-              </motion.div>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <Link to="/profile">
+                <motion.button
+                  className="group px-10 py-5 bg-gradient-to-r from-violet-600 to-fuchsia-600 rounded-2xl text-white font-bold text-lg"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <span className="flex items-center gap-3">
+                    <Wallet className="w-6 h-6" />
+                    Connect & Start
+                    <ArrowRight className="w-6 h-6 group-hover:translate-x-1 transition-transform" />
+                  </span>
+                </motion.button>
+              </Link>
               
-              <motion.div
-                whileHover={{ scale: 1.05, y: -2 }}
-                whileTap={{ scale: 0.95 }}
-                transition={{ type: "spring", stiffness: 300, damping: 20 }}
-              >
-                <Link to="/creator-marketplace" className="btn-secondary text-lg px-10 py-5 flex items-center justify-center space-x-3 shadow-2xl hover:shadow-purple-500/25 transition-all duration-300">
-                  <Users className="w-6 h-6" />
-                  <span>Explore Creators</span>
-                </Link>
-              </motion.div>
-            </motion.div>
+              <Link to="/dashboard">
+                <motion.button
+                  className="px-10 py-5 border-2 border-white/20 rounded-2xl text-white font-bold text-lg hover:bg-white/5 transition-colors"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <span className="flex items-center gap-3">
+                    <BarChart3 className="w-6 h-6" />
+                    View Dashboard
+                  </span>
+                </motion.button>
+              </Link>
+            </div>
           </motion.div>
         </div>
       </section>
+
+      {/* Footer spacer */}
+      <div className="h-20" />
     </div>
   )
 }

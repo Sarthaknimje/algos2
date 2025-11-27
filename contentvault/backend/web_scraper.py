@@ -705,7 +705,7 @@ class WebScraper:
                         page_text = response.text
                         
                         # Log some of the page content for debugging
-                        logger.info(f"LinkedIn page title: {og_title[:100] if og_title else 'None'}")
+                        logger.info(f"LinkedIn page title: {title_text[:100] if title_text else 'None'}")
                         
                         # Look for reactions in the HTML (LinkedIn shows them as plain numbers)
                         # LinkedIn format: "317 reactions" or just "317" followed by comments section

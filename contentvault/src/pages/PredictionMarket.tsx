@@ -54,6 +54,7 @@ interface Prediction {
   yes_odds?: number
   no_odds?: number
   time_remaining_hours?: number
+  thumbnail?: string
 }
 
 const BACKEND_URL = 'http://localhost:5001'
@@ -61,7 +62,11 @@ const BACKEND_URL = 'http://localhost:5001'
 const PredictionMarket: React.FC = () => {
   const { isConnected, address, connectWallet, peraWallet } = useWallet()
   const [predictions, setPredictions] = useState<Prediction[]>([])
+  const [allPredictions, setAllPredictions] = useState<Prediction[]>([])
   const [loading, setLoading] = useState(true)
+  const [platformFilter, setPlatformFilter] = useState<'all' | 'youtube' | 'instagram' | 'twitter' | 'linkedin'>('all')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'resolved'>('all')
+  const [sortBy, setSortBy] = useState<'trending' | 'liquidity' | 'newest' | 'oldest'>('trending')
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [selectedPrediction, setSelectedPrediction] = useState<Prediction | null>(null)
   const [showTradeModal, setShowTradeModal] = useState(false)
@@ -110,7 +115,8 @@ const PredictionMarket: React.FC = () => {
 
   const fetchPredictions = async () => {
     try {
-      const response = await fetch(`${BACKEND_URL}/api/predictions?status=active`)
+      // Fetch ALL predictions (active + resolved)
+      const response = await fetch(`${BACKEND_URL}/api/predictions?status=all`)
       const data = await response.json()
       if (data.success) {
         // Fetch detailed data for each prediction with real-time metrics
@@ -122,9 +128,43 @@ const PredictionMarket: React.FC = () => {
               if (detailData.success) {
                 const pred = detailData.prediction
                 
+                // Fetch thumbnail from content URL
+                let thumbnail = ''
+                try {
+                  if (pred.platform === 'youtube') {
+                    // Extract video ID from various YouTube URL formats
+                    const url = pred.content_url
+                    let videoId = ''
+                    if (url.includes('v=')) {
+                      videoId = url.split('v=')[1]?.split('&')[0] || ''
+                    } else if (url.includes('youtu.be/')) {
+                      videoId = url.split('youtu.be/')[1]?.split('?')[0] || ''
+                    } else if (url.includes('youtube.com/embed/')) {
+                      videoId = url.split('youtube.com/embed/')[1]?.split('?')[0] || ''
+                    }
+                    if (videoId) {
+                      thumbnail = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
+                    }
+                  } else {
+                    // For other platforms, try to get from token if exists
+                    const tokenRes = await fetch(`${BACKEND_URL}/tokens`)
+                    const tokenData = await tokenRes.json()
+                    if (tokenData.success) {
+                      const matchingToken = tokenData.tokens?.find((t: any) => 
+                        t.content_url === pred.content_url || 
+                        t.content_id === pred.content_url.split('/').pop()
+                      )
+                      if (matchingToken?.content_thumbnail) {
+                        thumbnail = matchingToken.content_thumbnail
+                      }
+                    }
+                  }
+                } catch (e) {
+                  // Thumbnail fetch failed, continue without it
+                }
+                
                 // Check if target is met - auto-resolve
                 if (pred.current_value >= pred.target_value && (pred.status === 'active' || pred.status === 'resolving')) {
-                  // Auto-resolve if target reached
                   try {
                     const resolveRes = await fetch(`${BACKEND_URL}/api/predictions/${p.prediction_id}/resolve`, {
                       method: 'POST',
@@ -132,7 +172,6 @@ const PredictionMarket: React.FC = () => {
                     })
                     const resolveData = await resolveRes.json()
                     if (resolveData.success) {
-                      // Refresh after resolution to show outcome
                       setTimeout(fetchPredictions, 2000)
                     }
                   } catch (e) {
@@ -140,7 +179,7 @@ const PredictionMarket: React.FC = () => {
                   }
                 }
                 
-                return pred
+                return { ...pred, thumbnail }
               }
               return p
             } catch {
@@ -148,7 +187,8 @@ const PredictionMarket: React.FC = () => {
             }
           })
         )
-        setPredictions(detailed)
+        setAllPredictions(detailed)
+        filterAndSortPredictions(detailed)
       }
     } catch (error) {
       console.error('Error fetching predictions:', error)
@@ -156,6 +196,48 @@ const PredictionMarket: React.FC = () => {
       setLoading(false)
     }
   }
+
+  const filterAndSortPredictions = (preds: Prediction[]) => {
+    let filtered = [...preds]
+
+    // Filter by platform
+    if (platformFilter !== 'all') {
+      filtered = filtered.filter(p => p.platform === platformFilter)
+    }
+
+    // Filter by status
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(p => p.status === statusFilter)
+    }
+
+    // Sort
+    filtered.sort((a, b) => {
+      switch (sortBy) {
+        case 'trending':
+          // Most trades/activity (pool size)
+          const aLiquidity = (a.yes_pool || 0) + (a.no_pool || 0)
+          const bLiquidity = (b.yes_pool || 0) + (b.no_pool || 0)
+          return bLiquidity - aLiquidity
+        case 'liquidity':
+          // Highest total pool
+          const aTotal = (a.yes_pool || 0) + (a.no_pool || 0)
+          const bTotal = (b.yes_pool || 0) + (b.no_pool || 0)
+          return bTotal - aTotal
+        case 'newest':
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        case 'oldest':
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        default:
+          return 0
+      }
+    })
+
+    setPredictions(filtered)
+  }
+
+  useEffect(() => {
+    filterAndSortPredictions(allPredictions)
+  }, [platformFilter, statusFilter, sortBy, allPredictions])
 
   const handleCreatePrediction = async () => {
     if (!isConnected || !address) {
@@ -424,6 +506,77 @@ const PredictionMarket: React.FC = () => {
           </motion.div>
         )}
 
+        {/* Filters & Sort */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+          className="mb-8"
+        >
+          <div className="card p-4">
+            <div className="flex flex-wrap items-center gap-4">
+              {/* Platform Filter */}
+              <div className="flex items-center gap-2">
+                <span className="text-gray-400 text-sm">Platform:</span>
+                <div className="flex gap-2">
+                  {(['all', 'youtube', 'instagram', 'twitter', 'linkedin'] as const).map((platform) => (
+                    <motion.button
+                      key={platform}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => setPlatformFilter(platform)}
+                      className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                        platformFilter === platform
+                          ? 'bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white'
+                          : 'bg-white/5 text-gray-400 hover:bg-white/10'
+                      }`}
+                    >
+                      {platform === 'all' ? 'All' : platform.charAt(0).toUpperCase() + platform.slice(1)}
+                    </motion.button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Status Filter */}
+              <div className="flex items-center gap-2">
+                <span className="text-gray-400 text-sm">Status:</span>
+                <div className="flex gap-2">
+                  {(['all', 'active', 'resolved'] as const).map((status) => (
+                    <motion.button
+                      key={status}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => setStatusFilter(status)}
+                      className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                        statusFilter === status
+                          ? 'bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white'
+                          : 'bg-white/5 text-gray-400 hover:bg-white/10'
+                      }`}
+                    >
+                      {status.charAt(0).toUpperCase() + status.slice(1)}
+                    </motion.button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Sort */}
+              <div className="flex items-center gap-2 ml-auto">
+                <span className="text-gray-400 text-sm">Sort by:</span>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as any)}
+                  className="px-4 py-2 bg-white/5 border border-white/20 rounded-lg text-white text-sm focus:outline-none focus:border-violet-500"
+                >
+                  <option value="trending">🔥 Trending</option>
+                  <option value="liquidity">💰 Most Liquid</option>
+                  <option value="newest">🆕 Newest</option>
+                  <option value="oldest">⏰ Oldest</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+
         {/* Predictions Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {predictions.map((prediction, index) => (
@@ -435,6 +588,20 @@ const PredictionMarket: React.FC = () => {
               whileHover={{ y: -5 }}
               className="card hover:border-violet-500/50 transition-all"
             >
+              {/* Thumbnail */}
+              {prediction.thumbnail && (
+                <div className="mb-4 rounded-xl overflow-hidden">
+                  <img
+                    src={prediction.thumbnail}
+                    alt={prediction.platform}
+                    className="w-full h-48 object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = 'none'
+                    }}
+                  />
+                </div>
+              )}
+
               {/* Header */}
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
@@ -447,10 +614,25 @@ const PredictionMarket: React.FC = () => {
                 <div className={`px-3 py-1 rounded-full text-xs font-semibold ${
                   prediction.status === 'active' 
                     ? 'bg-green-500/20 text-green-400' 
+                    : prediction.status === 'resolved'
+                    ? 'bg-blue-500/20 text-blue-400'
                     : 'bg-gray-500/20 text-gray-400'
                 }`}>
                   {prediction.status}
                 </div>
+              </div>
+
+              {/* Content Link */}
+              <div className="mb-4">
+                <a
+                  href={prediction.content_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-violet-400 hover:text-violet-300 text-sm transition-colors"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  <span className="truncate">View Original Content</span>
+                </a>
               </div>
 
               {/* Real-Time Metrics Display */}
@@ -631,13 +813,25 @@ const PredictionMarket: React.FC = () => {
           ))}
         </div>
 
-        {predictions.length === 0 && (
-          <div className="text-center py-16">
+        {predictions.length === 0 && !loading && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-center py-16"
+          >
             <div className="w-24 h-24 bg-gradient-to-r from-gray-500 to-gray-600 rounded-full flex items-center justify-center mx-auto mb-6">
               <BarChart3 className="w-12 h-12 text-white" />
             </div>
-            <h3 className="text-2xl font-bold text-white mb-4">No Active Predictions</h3>
-            <p className="text-gray-400 mb-6">Be the first to create a prediction market!</p>
+            <h3 className="text-2xl font-bold text-white mb-4">
+              {platformFilter !== 'all' || statusFilter !== 'all'
+                ? 'No Predictions Match Your Filters'
+                : 'No Predictions Yet'}
+            </h3>
+            <p className="text-gray-400 mb-6">
+              {platformFilter !== 'all' || statusFilter !== 'all'
+                ? 'Try adjusting your filters to see more predictions.'
+                : 'Be the first to create a prediction market!'}
+            </p>
             {isConnected && (
               <motion.button
                 whileHover={{ scale: 1.05 }}
@@ -648,7 +842,7 @@ const PredictionMarket: React.FC = () => {
                 Create Prediction Market
               </motion.button>
             )}
-          </div>
+          </motion.div>
         )}
       </div>
 

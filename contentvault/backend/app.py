@@ -375,12 +375,27 @@ def init_db():
             transaction_id TEXT,
             status TEXT DEFAULT 'pending',
             payout_amount REAL DEFAULT 0,
+            claimed INTEGER DEFAULT 0,
+            claim_txid TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (prediction_id) REFERENCES predictions (prediction_id)
         )
     ''')
     
-    conn.commit()
+    # Migrate prediction_trades table - add claimed columns if they don't exist
+    try:
+        cursor.execute('PRAGMA table_info(prediction_trades)')
+        columns = [col[1] for col in cursor.fetchall()]
+        
+        if 'claimed' not in columns:
+            cursor.execute('ALTER TABLE prediction_trades ADD COLUMN claimed INTEGER DEFAULT 0')
+        if 'claim_txid' not in columns:
+            cursor.execute('ALTER TABLE prediction_trades ADD COLUMN claim_txid TEXT')
+        
+        conn.commit()
+    except Exception as e:
+        logger.warning(f"Migration warning: {e}")
+    
     conn.close()
     
     # Load YouTube session from database if exists
@@ -2770,6 +2785,140 @@ def auto_resolve_expired():
         
     except Exception as e:
         logger.error(f"Error auto-resolving predictions: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/predictions/winnings/<address>', methods=['GET'])
+@cross_origin(supports_credentials=True)
+def get_user_winnings(address):
+    """Get user's pending winnings from predictions"""
+    try:
+        conn = sqlite3.connect('creatorvault.db')
+        cursor = conn.cursor()
+        
+        # Get all won trades with pending payouts (not yet claimed)
+        cursor.execute('''
+            SELECT pt.id, pt.prediction_id, pt.payout_amount, pt.status, pt.claimed,
+                   p.content_url, p.platform, p.metric_type, p.outcome
+            FROM prediction_trades pt
+            JOIN predictions p ON pt.prediction_id = p.prediction_id
+            WHERE pt.trader_address = ? AND pt.status = 'won' AND pt.payout_amount > 0 AND (pt.claimed IS NULL OR pt.claimed = 0)
+        ''', (address,))
+        
+        winnings = cursor.fetchall()
+        total_pending = sum(win[2] for win in winnings)  # payout_amount
+        
+        result = []
+        for win in winnings:
+            trade_id, pred_id, payout, status, claimed, content_url, platform, metric, outcome = win
+            result.append({
+                'trade_id': trade_id,
+                'prediction_id': pred_id,
+                'payout_amount': payout,
+                'status': status,
+                'claimed': claimed,
+                'content_url': content_url,
+                'platform': platform,
+                'metric_type': metric,
+                'outcome': outcome
+            })
+        
+        conn.close()
+        
+        return jsonify({
+            "success": True,
+            "winnings": result,
+            "total_pending": total_pending
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching winnings: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/predictions/claim/<trade_id>', methods=['POST'])
+@cross_origin(supports_credentials=True)
+def claim_winnings(trade_id):
+    """Claim winnings - send payment from creator wallet to winner"""
+    try:
+        data = request.get_json()
+        winner_address = data.get('winner_address', '').strip()
+        
+        if not winner_address:
+            return jsonify({"success": False, "error": "Winner address required"}), 400
+        
+        conn = sqlite3.connect('creatorvault.db')
+        cursor = conn.cursor()
+        
+        # Get trade details
+        cursor.execute('''
+            SELECT trader_address, payout_amount, claimed
+            FROM prediction_trades
+            WHERE id = ?
+        ''', (trade_id,))
+        
+        trade = cursor.fetchone()
+        if not trade:
+            return jsonify({"success": False, "error": "Trade not found"}), 404
+        
+        trader_address, payout_amount, claimed = trade
+        
+        if trader_address != winner_address:
+            return jsonify({"success": False, "error": "Unauthorized"}), 403
+        
+        if claimed:
+            return jsonify({"success": False, "error": "Already claimed"}), 400
+        
+        # Send payment from creator wallet to winner
+        try:
+            creator_private_key = mnemonic.to_private_key(CREATOR_MNEMONIC)
+            creator_address = account.address_from_private_key(creator_private_key)
+            
+            # Get transaction params
+            params = algod_client.get_transaction_params()
+            
+            # Convert ALGO to microAlgos
+            microalgos = int(payout_amount * 1_000_000)
+            
+            # Create payment transaction
+            txn = transaction.PaymentTxn(
+                sender=creator_address,
+                sp=params,
+                receiver=winner_address,
+                amt=microalgos,
+                note=f"Prediction winnings payout - Trade {trade_id}".encode()
+            )
+            
+            # Sign and send
+            signed_txn = txn.sign(creator_private_key)
+            txid = algod_client.send_transaction(signed_txn)
+            
+            # Wait for confirmation
+            wait_for_confirmation(algod_client, txid, 4)
+            
+            # Mark as claimed
+            cursor.execute('''
+                UPDATE prediction_trades
+                SET claimed = 1, claim_txid = ?
+                WHERE id = ?
+            ''', (txid, trade_id))
+            
+            conn.commit()
+            conn.close()
+            
+            logger.info(f"✅ Paid {payout_amount} ALGO to {winner_address} for trade {trade_id}")
+            
+            return jsonify({
+                "success": True,
+                "txid": txid,
+                "payout_amount": payout_amount
+            })
+            
+        except Exception as e:
+            logger.error(f"Error sending payment: {e}")
+            conn.close()
+            return jsonify({"success": False, "error": f"Payment failed: {str(e)}"}), 500
+        
+    except Exception as e:
+        logger.error(f"Error claiming winnings: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 if __name__ == '__main__':

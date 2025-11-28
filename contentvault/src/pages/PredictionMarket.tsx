@@ -90,16 +90,75 @@ const PredictionMarket: React.FC = () => {
   const [userTokens, setUserTokens] = useState<any[]>([])
   const [showTokenSelectModal, setShowTokenSelectModal] = useState(false)
   const [createFromToken, setCreateFromToken] = useState(false)
+  const [userWinnings, setUserWinnings] = useState<any[]>([])
+  const [claiming, setClaiming] = useState<string | null>(null)
 
   useEffect(() => {
     fetchPredictions()
     if (isConnected && address) {
       fetchUserTokens()
+      fetchUserWinnings()
     }
     // Refresh every 10 seconds for real-time updates
-    const interval = setInterval(fetchPredictions, 10000)
+    const interval = setInterval(() => {
+      fetchPredictions()
+      if (isConnected && address) {
+        fetchUserWinnings()
+      }
+    }, 10000)
     return () => clearInterval(interval)
   }, [isConnected, address])
+
+  const fetchUserWinnings = async () => {
+    if (!address) return
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/predictions/winnings/${address}`)
+      const data = await response.json()
+      if (data.success) {
+        setUserWinnings(data.winnings || [])
+      }
+    } catch (error) {
+      console.error('Error fetching winnings:', error)
+    }
+  }
+
+  const handleClaimWinnings = async (tradeId: string, payoutAmount: number) => {
+    if (!address || !peraWallet) {
+      setTradeError('Please connect your wallet first')
+      return
+    }
+
+    setClaiming(tradeId)
+    setTradeError(null)
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/predictions/claim/${tradeId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          winner_address: address
+        })
+      })
+
+      const data = await response.json()
+      if (data.success) {
+        setTradeSuccess({
+          show: true,
+          message: `✅ Claimed ${payoutAmount.toFixed(4)} ALGO! Payment sent to your wallet.`,
+          txId: data.txid
+        })
+        setTimeout(() => {
+          setTradeSuccess(null)
+          fetchUserWinnings()
+        }, 3000)
+      } else {
+        setTradeError(data.error || 'Failed to claim winnings')
+      }
+    } catch (error: any) {
+      setTradeError(`Claim failed: ${error.message}`)
+    } finally {
+      setClaiming(null)
+    }
+  }
 
   const fetchUserTokens = async () => {
     try {
@@ -577,20 +636,20 @@ const PredictionMarket: React.FC = () => {
           </div>
         </motion.div>
 
-        {/* Predictions Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Predictions Grid - YouTube Style Compact */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {predictions.map((prediction, index) => (
             <motion.div
               key={prediction.prediction_id}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.1 }}
-              whileHover={{ y: -5 }}
-              className="card hover:border-violet-500/50 transition-all"
+              transition={{ delay: index * 0.05 }}
+              whileHover={{ y: -2 }}
+              className="bg-white/5 backdrop-blur-lg rounded-xl overflow-hidden border border-white/10 hover:border-violet-500/50 transition-all group"
             >
               {/* Thumbnail - YouTube style (16:9) */}
-              {prediction.thumbnail && (
-                <div className="mb-4 rounded-xl overflow-hidden aspect-video bg-white/5">
+              <div className="relative aspect-video bg-gray-800">
+                {prediction.thumbnail ? (
                   <img
                     src={prediction.thumbnail}
                     alt={prediction.platform}
@@ -599,104 +658,74 @@ const PredictionMarket: React.FC = () => {
                       (e.target as HTMLImageElement).style.display = 'none'
                     }}
                   />
-                </div>
-              )}
-
-              {/* Header */}
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  {getPlatformIcon(prediction.platform)}
-                  <div>
-                    <h3 className="text-white font-bold capitalize">{prediction.platform}</h3>
-                    <p className="text-gray-400 text-xs">{prediction.metric_type}</p>
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    {getPlatformIcon(prediction.platform)}
                   </div>
+                )}
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                  <a
+                    href={prediction.content_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="bg-white/20 backdrop-blur-sm p-2 rounded-full hover:bg-white/30 transition-colors"
+                  >
+                    <Play className="w-5 h-5 text-white" />
+                  </a>
                 </div>
-                <div className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                <div className={`absolute top-2 right-2 px-2 py-1 rounded-full text-xs font-semibold backdrop-blur-sm ${
                   prediction.status === 'active' 
-                    ? 'bg-green-500/20 text-green-400' 
+                    ? 'bg-green-500/90 text-white' 
                     : prediction.status === 'resolved'
-                    ? 'bg-blue-500/20 text-blue-400'
-                    : 'bg-gray-500/20 text-gray-400'
+                    ? 'bg-blue-500/90 text-white'
+                    : 'bg-gray-500/90 text-white'
                 }`}>
                   {prediction.status}
                 </div>
               </div>
 
-              {/* Content Link */}
-              <div className="mb-4">
-                <a
-                  href={prediction.content_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 text-violet-400 hover:text-violet-300 text-sm transition-colors"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                  <span className="truncate">View Original Content</span>
-                </a>
-              </div>
+              {/* Content - Compact */}
+              <div className="p-3">
+                {/* Platform & Metric */}
+                <div className="flex items-center gap-2 mb-2">
+                  {getPlatformIcon(prediction.platform)}
+                  <span className="text-gray-400 text-xs capitalize">{prediction.platform}</span>
+                  <span className="text-gray-500">•</span>
+                  <span className="text-gray-400 text-xs capitalize">{prediction.metric_type}</span>
+                </div>
 
-              {/* Real-Time Metrics Display */}
-              <div className="mb-4 p-4 bg-gradient-to-r from-violet-500/10 to-fuchsia-500/10 rounded-xl border border-violet-500/20">
-                <p className="text-white font-semibold mb-4 text-center">
-                  Will reach{' '}
-                  <span className="text-violet-400 font-bold">{formatNumber(prediction.target_value)}</span>{' '}
-                  {prediction.metric_type} in{' '}
-                  <span className="text-fuchsia-400 font-bold">{prediction.timeframe_hours}h</span>?
-                </p>
-                
-                {/* Current Metric - Large Display */}
-                <div className="text-center mb-4">
-                  <div className="flex items-center justify-center gap-2 mb-2">
-                    {getMetricIcon(prediction.metric_type)}
-                    <span className="text-gray-400 text-sm">Current {prediction.metric_type}</span>
-                  </div>
-                  <div className="text-4xl font-bold text-white mb-1">
+                {/* Question */}
+                <h3 className="text-white font-semibold mb-2 line-clamp-2 text-sm group-hover:text-violet-400 transition-colors">
+                  Will reach {formatNumber(prediction.target_value)} {prediction.metric_type}?
+                </h3>
+
+                {/* Current Value */}
+                <div className="flex items-center gap-2 mb-2">
+                  {getMetricIcon(prediction.metric_type)}
+                  <span className="text-white font-bold text-lg">
                     {formatNumber(
                       prediction.status === 'resolved' 
                         ? (prediction.final_value || prediction.current_value || prediction.initial_value)
                         : (prediction.current_value || prediction.initial_value)
                     )}
-                  </div>
-                  <div className="text-sm text-gray-400">
-                    {prediction.status === 'resolved' ? (
-                      <>
-                        Final: <span className="text-violet-400 font-semibold">{formatNumber(prediction.final_value || 0)}</span>
-                        {' | '}
-                        Target: <span className="text-violet-400 font-semibold">{formatNumber(prediction.target_value)}</span>
-                      </>
-                    ) : (
-                      <>
-                        Target: <span className="text-violet-400 font-semibold">{formatNumber(prediction.target_value)}</span>
-                        {' | '}
-                        Started: <span className="text-gray-500">{formatNumber(prediction.initial_value)}</span>
-                      </>
-                    )}
-                  </div>
+                  </span>
+                  <span className="text-gray-400 text-xs">
+                    / {formatNumber(prediction.target_value)}
+                  </span>
                 </div>
 
-                {/* Progress Bar */}
+                {/* Progress Bar - Compact */}
                 <div className="mb-3">
-                  <div className="flex justify-between text-xs text-gray-400 mb-1">
-                    <span>Progress</span>
-                    <span>
-                      {(() => {
-                        const currentVal = prediction.status === 'resolved'
-                          ? (prediction.final_value || prediction.current_value || prediction.initial_value)
-                          : (prediction.current_value || prediction.initial_value)
-                        return Math.min(100, (currentVal / prediction.target_value) * 100).toFixed(1)
-                      })()}%
-                    </span>
-                  </div>
-                  <div className="w-full h-3 bg-white/10 rounded-full overflow-hidden">
+                  <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
                     <motion.div
                       initial={{ width: 0 }}
                       animate={{ 
-                        width: `${(() => {
+                        width: `${Math.min(100, ((() => {
                           const currentVal = prediction.status === 'resolved'
                             ? (prediction.final_value || prediction.current_value || prediction.initial_value)
                             : (prediction.current_value || prediction.initial_value)
-                          return Math.min(100, (currentVal / prediction.target_value) * 100)
-                        })()}%` 
+                          return (currentVal / prediction.target_value) * 100
+                        })()))}%` 
                       }}
                       transition={{ duration: 0.5 }}
                       className={`h-full rounded-full ${
@@ -713,141 +742,80 @@ const PredictionMarket: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Completion Status */}
-                {(() => {
-                  const currentVal = prediction.current_value || prediction.initial_value
-                  return currentVal >= prediction.target_value && prediction.status === 'active'
-                })() && (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="p-3 bg-green-500/20 border border-green-500/50 rounded-lg mb-2"
-                  >
-                    <div className="flex items-center gap-2 justify-center">
-                      <CheckCircle className="w-5 h-5 text-green-400" />
-                      <span className="text-green-400 font-semibold">Target Reached! Resolving...</span>
-                    </div>
-                  </motion.div>
-                )}
-
-                {/* Metric Change */}
-                <div className="flex items-center justify-center gap-4 text-xs">
-                  <div className="flex items-center gap-1 text-gray-400">
-                    <span>Started:</span>
-                    <span className="text-white">{formatNumber(prediction.initial_value)}</span>
+                {/* Pools - Compact */}
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <div className="p-2 bg-green-500/10 rounded-lg border border-green-500/20">
+                    <div className="text-xs text-green-400 font-semibold mb-1">YES</div>
+                    <div className="text-sm font-bold text-white">{formatNumber(prediction.yes_pool || 0)}</div>
+                    <div className="text-xs text-gray-400">{prediction.yes_odds?.toFixed(2)}x</div>
                   </div>
-                  <div className="flex items-center gap-1 text-violet-400">
-                    <TrendingUp className="w-3 h-3" />
-                    <span>
+                  <div className="p-2 bg-red-500/10 rounded-lg border border-red-500/20">
+                    <div className="text-xs text-red-400 font-semibold mb-1">NO</div>
+                    <div className="text-sm font-bold text-white">{formatNumber(prediction.no_pool || 0)}</div>
+                    <div className="text-xs text-gray-400">{prediction.no_odds?.toFixed(2)}x</div>
+                  </div>
+                </div>
+
+                {/* Outcome or Time */}
+                {prediction.status === 'resolved' ? (
+                  <div className={`mb-2 p-2 rounded-lg text-center text-xs font-semibold ${
+                    prediction.outcome === 'YES' 
+                      ? 'bg-green-500/20 text-green-400' 
+                      : 'bg-red-500/20 text-red-400'
+                  }`}>
+                    {prediction.outcome === 'YES' ? '✅ YES Won' : '❌ NO Won'} • Final: {formatNumber(prediction.final_value || 0)}
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between text-xs text-gray-400 mb-2">
+                    <div className="flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      <span>
+                        {prediction.time_remaining_hours 
+                          ? `${Math.floor(prediction.time_remaining_hours)}h left`
+                          : 'Expired'}
+                      </span>
+                    </div>
+                    <span className="text-violet-400">
                       +{formatNumber((() => {
-                        const currentVal = prediction.status === 'resolved'
-                          ? (prediction.final_value || prediction.current_value || prediction.initial_value)
-                          : (prediction.current_value || prediction.initial_value)
+                        const currentVal = prediction.current_value || prediction.initial_value
                         return currentVal - prediction.initial_value
                       })())}
                     </span>
                   </div>
-                </div>
-              </div>
+                )}
 
-              {/* Pools & Odds */}
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div className={`p-4 rounded-xl border-2 ${
-                  prediction.outcome === 'YES' 
-                    ? 'bg-green-500/20 border-green-500/50' 
-                    : 'bg-white/5 border-white/10'
-                }`}>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-green-400 font-semibold">YES</span>
-                    <span className="text-white font-bold">{prediction.yes_odds?.toFixed(2)}x</span>
-                  </div>
-                  <div className="text-2xl font-bold text-white mb-1">
-                    {formatNumber(prediction.yes_pool || 0)} ALGO
-                  </div>
-                  <div className="text-xs text-gray-400">
-                    {prediction.yes_pool && prediction.no_pool 
-                      ? `${((prediction.yes_pool / (prediction.yes_pool + prediction.no_pool)) * 100).toFixed(1)}%` 
-                      : '0%'} pool
-                  </div>
-                </div>
-                <div className={`p-4 rounded-xl border-2 ${
-                  prediction.outcome === 'NO' 
-                    ? 'bg-red-500/20 border-red-500/50' 
-                    : 'bg-white/5 border-white/10'
-                }`}>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-red-400 font-semibold">NO</span>
-                    <span className="text-white font-bold">{prediction.no_odds?.toFixed(2)}x</span>
-                  </div>
-                  <div className="text-2xl font-bold text-white mb-1">
-                    {formatNumber(prediction.no_pool || 0)} ALGO
-                  </div>
-                  <div className="text-xs text-gray-400">
-                    {prediction.yes_pool && prediction.no_pool 
-                      ? `${((prediction.no_pool / (prediction.yes_pool + prediction.no_pool)) * 100).toFixed(1)}%` 
-                      : '0%'} pool
-                  </div>
-                </div>
-              </div>
-
-              {/* Time Remaining */}
-              {prediction.status === 'active' && (
-                <div className="flex items-center justify-between mb-4 p-3 bg-white/5 rounded-lg">
-                  <div className="flex items-center gap-2 text-gray-400">
-                    <Clock className="w-4 h-4" />
-                    <span className="text-sm">
-                      {prediction.time_remaining_hours 
-                        ? `${Math.floor(prediction.time_remaining_hours)}h ${Math.floor((prediction.time_remaining_hours % 1) * 60)}m left`
-                        : 'Expired'}
-                    </span>
-                  </div>
-                  <a
-                    href={prediction.content_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-violet-400 hover:text-violet-300 text-sm flex items-center gap-1"
+                {/* Trade/Claim Button */}
+                {prediction.status === 'active' && isConnected && (
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => {
+                      setSelectedPrediction(prediction)
+                      setShowTradeModal(true)
+                    }}
+                    className="w-full py-2 bg-gradient-to-r from-violet-600 to-fuchsia-600 rounded-lg text-white font-semibold text-sm"
                   >
-                    <span>View Content</span>
-                    <ExternalLink className="w-4 h-4" />
-                  </a>
-                </div>
-              )}
-
-              {/* Outcome */}
-              {prediction.status === 'resolved' && (
-                <div className={`mb-4 p-3 rounded-lg ${
-                  prediction.outcome === 'YES' 
-                    ? 'bg-green-500/20 border border-green-500/50' 
-                    : 'bg-red-500/20 border border-red-500/50'
-                }`}>
-                  <div className="flex items-center gap-2">
-                    {prediction.outcome === 'YES' ? (
-                      <CheckCircle className="w-5 h-5 text-green-400" />
-                    ) : (
-                      <XCircle className="w-5 h-5 text-red-400" />
-                    )}
-                    <span className="text-white font-semibold">
-                      {prediction.outcome === 'YES' ? 'YES' : 'NO'} won! 
-                      Final: {formatNumber(prediction.final_value || 0)}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* Trade Button */}
-              {prediction.status === 'active' && isConnected && (
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => {
-                    setSelectedPrediction(prediction)
-                    setShowTradeModal(true)
-                  }}
-                  className="w-full py-3 bg-gradient-to-r from-violet-600 to-fuchsia-600 rounded-xl text-white font-semibold"
-                >
-                  Trade Now
-                </motion.button>
-              )}
+                    Trade Now
+                  </motion.button>
+                )}
+                {prediction.status === 'resolved' && isConnected && (() => {
+                  const winning = userWinnings.find(w => w.prediction_id === prediction.prediction_id)
+                  if (winning && !winning.claimed) {
+                    return (
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={() => handleClaimWinnings(winning.trade_id, winning.payout_amount)}
+                        disabled={claiming === winning.trade_id}
+                        className="w-full py-2 bg-gradient-to-r from-green-600 to-emerald-600 rounded-lg text-white font-semibold text-sm disabled:opacity-50"
+                      >
+                        {claiming === winning.trade_id ? 'Claiming...' : `💰 Claim ${winning.payout_amount.toFixed(4)} ALGO`}
+                      </motion.button>
+                    )
+                  }
+                  return null
+                })()}
+              </div>
             </motion.div>
           ))}
         </div>

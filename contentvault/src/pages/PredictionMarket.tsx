@@ -59,7 +59,7 @@ interface Prediction {
 const BACKEND_URL = 'http://localhost:5001'
 
 const PredictionMarket: React.FC = () => {
-  const { isConnected, address, connectWallet } = useWallet()
+  const { isConnected, address, connectWallet, peraWallet } = useWallet()
   const [predictions, setPredictions] = useState<Prediction[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -68,6 +68,8 @@ const PredictionMarket: React.FC = () => {
   const [tradeSide, setTradeSide] = useState<'YES' | 'NO'>('YES')
   const [tradeAmount, setTradeAmount] = useState('')
   const [trading, setTrading] = useState(false)
+  const [tradeSuccess, setTradeSuccess] = useState<{show: boolean, message: string, txId?: string} | null>(null)
+  const [tradeError, setTradeError] = useState<string | null>(null)
   
   // Create prediction form
   const [createForm, setCreateForm] = useState({
@@ -78,6 +80,8 @@ const PredictionMarket: React.FC = () => {
     timeframe_hours: '24'
   })
   const [creating, setCreating] = useState(false)
+  const [createSuccess, setCreateSuccess] = useState<{show: boolean, message: string} | null>(null)
+  const [createError, setCreateError] = useState<string | null>(null)
   const [userTokens, setUserTokens] = useState<any[]>([])
   const [showTokenSelectModal, setShowTokenSelectModal] = useState(false)
   const [createFromToken, setCreateFromToken] = useState(false)
@@ -155,16 +159,17 @@ const PredictionMarket: React.FC = () => {
 
   const handleCreatePrediction = async () => {
     if (!isConnected || !address) {
-      alert('Please connect your wallet first')
+      setCreateError('Please connect your wallet first')
       return
     }
 
     if (!createForm.content_url || !createForm.target_value) {
-      alert('Please fill all required fields')
+      setCreateError('Please fill all required fields')
       return
     }
 
     setCreating(true)
+    setCreateError(null)
     try {
       const response = await fetch(`${BACKEND_URL}/api/predictions/create`, {
         method: 'POST',
@@ -181,7 +186,10 @@ const PredictionMarket: React.FC = () => {
 
       const data = await response.json()
       if (data.success) {
-        alert('✅ Prediction market created!')
+        setCreateSuccess({
+          show: true,
+          message: `✅ Prediction market created! ID: ${data.prediction.prediction_id}`
+        })
         setShowCreateModal(false)
         setCreateForm({
           content_url: '',
@@ -190,27 +198,34 @@ const PredictionMarket: React.FC = () => {
           target_value: '',
           timeframe_hours: '24'
         })
-        fetchPredictions()
+        setTimeout(() => {
+          setCreateSuccess(null)
+          fetchPredictions()
+        }, 3000)
       } else {
-        alert(`Error: ${data.error}`)
+        setCreateError(data.error || 'Failed to create prediction')
       }
     } catch (error: any) {
-      alert(`Error: ${error.message}`)
+      setCreateError(`Error: ${error.message}`)
     } finally {
       setCreating(false)
     }
   }
 
   const handleTrade = async () => {
-    if (!isConnected || !address || !selectedPrediction) return
+    if (!isConnected || !address || !selectedPrediction || !peraWallet) {
+      setTradeError('Please connect your wallet first')
+      return
+    }
 
     const amount = parseFloat(tradeAmount)
     if (isNaN(amount) || amount <= 0) {
-      alert('Please enter a valid amount')
+      setTradeError('Please enter a valid amount greater than 0')
       return
     }
 
     setTrading(true)
+    setTradeError(null)
     try {
       // First, create the trade record
       const response = await fetch(`${BACKEND_URL}/api/predictions/${selectedPrediction.prediction_id}/trade`, {
@@ -226,23 +241,33 @@ const PredictionMarket: React.FC = () => {
       const data = await response.json()
       if (data.success) {
         // Now send ALGO payment via Pera Wallet
-        const microAlgos = Math.floor(amount * 1000000)
-        
-        await sendAlgoPaymentWithPera({
-          receiverAddress: selectedPrediction.creator_address, // Send to creator (pool)
-          amountMicroAlgos: microAlgos,
-          note: `Prediction trade: ${tradeSide} on ${selectedPrediction.prediction_id}`
-        })
+        try {
+          const txId = await sendAlgoPaymentWithPera({
+            sender: address,
+            peraWallet: peraWallet,
+            receiver: selectedPrediction.creator_address, // Send to creator (pool)
+            amount: amount
+          })
 
-        alert(`✅ Trade placed! ${tradeSide} ${amount} ALGO at ${data.trade.odds}x odds`)
-        setShowTradeModal(false)
-        setTradeAmount('')
-        fetchPredictions()
+          setTradeSuccess({
+            show: true,
+            message: `✅ Trade placed! ${tradeSide} ${amount} ALGO at ${data.trade.odds}x odds`,
+            txId: txId
+          })
+          setShowTradeModal(false)
+          setTradeAmount('')
+          setTimeout(() => {
+            setTradeSuccess(null)
+            fetchPredictions()
+          }, 3000)
+        } catch (walletError: any) {
+          setTradeError(`Wallet error: ${walletError.message}`)
+        }
       } else {
-        alert(`Error: ${data.error}`)
+        setTradeError(data.error || 'Failed to place trade')
       }
     } catch (error: any) {
-      alert(`Trade failed: ${error.message}`)
+      setTradeError(`Trade failed: ${error.message}`)
     } finally {
       setTrading(false)
     }
@@ -718,7 +743,10 @@ const PredictionMarket: React.FC = () => {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-            onClick={() => setShowCreateModal(false)}
+            onClick={() => {
+              setShowCreateModal(false)
+              setCreateError(null)
+            }}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
@@ -728,6 +756,19 @@ const PredictionMarket: React.FC = () => {
               className="bg-[#1a1a2e] rounded-2xl p-6 max-w-2xl w-full border border-white/10"
             >
               <h2 className="text-2xl font-bold text-white mb-6">Create Prediction Market</h2>
+              
+              {createError && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mb-4 p-4 bg-red-500/20 border border-red-500/50 rounded-xl"
+                >
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="w-5 h-5 text-red-400" />
+                    <span className="text-red-400 text-sm">{createError}</span>
+                  </div>
+                </motion.div>
+              )}
               
               <div className="space-y-4">
                 <div>
@@ -801,7 +842,10 @@ const PredictionMarket: React.FC = () => {
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  onClick={() => setShowCreateModal(false)}
+                  onClick={() => {
+                    setShowCreateModal(false)
+                    setCreateError(null)
+                  }}
                   className="flex-1 px-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white font-semibold"
                 >
                   Cancel
@@ -829,7 +873,10 @@ const PredictionMarket: React.FC = () => {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-            onClick={() => setShowTradeModal(false)}
+            onClick={() => {
+              setShowTradeModal(false)
+              setTradeError(null)
+            }}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
@@ -839,6 +886,19 @@ const PredictionMarket: React.FC = () => {
               className="bg-[#1a1a2e] rounded-2xl p-6 max-w-md w-full border border-white/10"
             >
               <h2 className="text-2xl font-bold text-white mb-6">Trade Prediction</h2>
+              
+              {tradeError && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mb-4 p-4 bg-red-500/20 border border-red-500/50 rounded-xl"
+                >
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="w-5 h-5 text-red-400" />
+                    <span className="text-red-400 text-sm">{tradeError}</span>
+                  </div>
+                </motion.div>
+              )}
               
               <div className="mb-4 p-4 bg-white/5 rounded-xl">
                 <p className="text-white text-sm mb-2">
@@ -899,7 +959,10 @@ const PredictionMarket: React.FC = () => {
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  onClick={() => setShowTradeModal(false)}
+                  onClick={() => {
+                    setShowTradeModal(false)
+                    setTradeError(null)
+                  }}
                   className="flex-1 px-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white font-semibold"
                 >
                   Cancel
@@ -913,6 +976,83 @@ const PredictionMarket: React.FC = () => {
                 >
                   {trading ? 'Trading...' : 'Place Trade'}
                 </motion.button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Success Modal - Trade */}
+      <AnimatePresence>
+        {tradeSuccess?.show && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setTradeSuccess(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-[#1a1a2e] rounded-2xl p-6 max-w-md w-full border border-green-500/50"
+            >
+              <div className="text-center">
+                <motion.div
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  className="w-16 h-16 bg-gradient-to-r from-green-500 to-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4"
+                >
+                  <CheckCircle className="w-8 h-8 text-white" />
+                </motion.div>
+                <h3 className="text-2xl font-bold text-white mb-2">Trade Successful!</h3>
+                <p className="text-gray-300 mb-4">{tradeSuccess.message}</p>
+                {tradeSuccess.txId && (
+                  <a
+                    href={`https://testnet.algoexplorer.io/tx/${tradeSuccess.txId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-violet-400 hover:text-violet-300 text-sm flex items-center justify-center gap-1"
+                  >
+                    <span>View Transaction</span>
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Success Modal - Create */}
+      <AnimatePresence>
+        {createSuccess?.show && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setCreateSuccess(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-[#1a1a2e] rounded-2xl p-6 max-w-md w-full border border-green-500/50"
+            >
+              <div className="text-center">
+                <motion.div
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  className="w-16 h-16 bg-gradient-to-r from-green-500 to-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4"
+                >
+                  <CheckCircle className="w-8 h-8 text-white" />
+                </motion.div>
+                <h3 className="text-2xl font-bold text-white mb-2">Prediction Created!</h3>
+                <p className="text-gray-300">{createSuccess.message}</p>
               </div>
             </motion.div>
           </motion.div>

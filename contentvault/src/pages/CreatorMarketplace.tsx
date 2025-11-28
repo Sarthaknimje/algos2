@@ -149,7 +149,7 @@ const CreatorMarketplace: React.FC = () => {
       let aValue: number
       let bValue: number
 
-      switch (sortBy) {
+    switch (sortBy) {
         case 'market_cap':
           aValue = a.market_cap
           bValue = b.market_cap
@@ -219,21 +219,21 @@ const CreatorMarketplace: React.FC = () => {
       <div className="min-h-screen bg-[#0a0a0f] relative">
         <PremiumBackground variant="purple" />
         <div className="relative z-10 flex items-center justify-center min-h-screen">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="text-center"
+        >
           <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="text-center"
-          >
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+            animate={{ rotate: 360 }}
+            transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
               className="w-16 h-16 bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-2xl flex items-center justify-center mx-auto mb-6"
-            >
-              <Loader className="w-8 h-8 text-white" />
-            </motion.div>
-            <h2 className="text-2xl font-bold text-white mb-2">Loading Creator Tokens...</h2>
-            <p className="text-gray-400">Fetching real tokens from the blockchain</p>
+          >
+            <Loader className="w-8 h-8 text-white" />
           </motion.div>
+          <h2 className="text-2xl font-bold text-white mb-2">Loading Creator Tokens...</h2>
+          <p className="text-gray-400">Fetching real tokens from the blockchain</p>
+        </motion.div>
         </div>
       </div>
     )
@@ -244,25 +244,25 @@ const CreatorMarketplace: React.FC = () => {
       <div className="min-h-screen bg-[#0a0a0f] relative">
         <PremiumBackground variant="purple" />
         <div className="relative z-10 flex items-center justify-center min-h-screen">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="text-center max-w-md mx-auto px-4"
-          >
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="text-center max-w-md mx-auto px-4"
+        >
             <div className="w-16 h-16 bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
-              <AlertCircle className="w-8 h-8 text-white" />
-            </div>
-            <h2 className="text-2xl font-bold text-white mb-4">Error Loading Tokens</h2>
-            <p className="text-gray-400 mb-6">{error}</p>
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={fetchTokens}
+            <AlertCircle className="w-8 h-8 text-white" />
+          </div>
+          <h2 className="text-2xl font-bold text-white mb-4">Error Loading Tokens</h2>
+          <p className="text-gray-400 mb-6">{error}</p>
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={fetchTokens}
               className="px-6 py-3 bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-xl text-white font-bold"
-            >
-              Try Again
-            </motion.button>
-          </motion.div>
+          >
+            Try Again
+          </motion.button>
+        </motion.div>
         </div>
       </div>
     )
@@ -284,7 +284,7 @@ const CreatorMarketplace: React.FC = () => {
           </div>
           <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">
             Creator <span className="bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">Marketplace</span>
-          </h1>
+              </h1>
           <p className="text-gray-400 text-xl max-w-2xl mx-auto">
             Discover and trade tokens from YouTube, Instagram, Twitter/X, and LinkedIn creators. All tokens are backed by real verified content.
           </p>
@@ -452,13 +452,13 @@ const CreatorMarketplace: React.FC = () => {
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center space-x-3 flex-1">
                       <div className="w-14 h-14 bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-lg">
-                        {token.token_symbol.substring(0, 2)}
-                      </div>
+                      {token.token_symbol.substring(0, 2)}
+                          </div>
                       <div className="flex-1 min-w-0 overflow-hidden">
                         <h3 className="text-xl font-black text-white mb-1 truncate" title={token.token_name}>{token.token_name}</h3>
                         <p className="text-violet-400 font-semibold text-sm">${token.token_symbol}</p>
                       </div>
-                    </div>
+        </div>
                   </div>
                   <div className="text-right">
                     <div className="text-lg font-bold text-white">${formatPrice(token.current_price)}</div>
@@ -501,19 +501,19 @@ const CreatorMarketplace: React.FC = () => {
                   ) : token.platform === 'linkedin' ? (
                     <LinkedInIcon className="w-5 h-5 text-blue-600" />
                   ) : (
-                    <YouTubeIcon className="w-5 h-5 text-red-500" />
+                  <YouTubeIcon className="w-5 h-5 text-red-500" />
                   )}
                   <div className="flex-1 min-w-0 overflow-hidden">
                     <p className="text-white font-semibold text-sm truncate" title={token.youtube_channel_title || token.token_name}>
                       {token.youtube_channel_title || token.token_name}
                     </p>
                     {token.youtube_subscribers > 0 && (
-                      <p className="text-gray-400 text-xs">{formatNumber(token.youtube_subscribers)} subscribers</p>
+                    <p className="text-gray-400 text-xs">{formatNumber(token.youtube_subscribers)} subscribers</p>
                     )}
                     {token.platform && token.platform !== 'youtube' && (
                       <p className="text-gray-400 text-xs capitalize">{token.platform} Content</p>
                     )}
-                  </div>
+                </div>
               </div>
 
               {/* Metrics */}

@@ -437,81 +437,12 @@ const PredictionMarket: React.FC = () => {
           )}
         </motion.div>
 
-        {/* Stats */}
+        {/* Filters & Sort - At Top */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8"
-        >
-          <div className="card text-center">
-            <BarChart3 className="w-8 h-8 text-violet-400 mx-auto mb-3" />
-            <div className="text-3xl font-bold text-white mb-1">{predictions.length}</div>
-            <div className="text-gray-400 text-sm">Active Markets</div>
-          </div>
-          <div className="card text-center">
-            <DollarSign className="w-8 h-8 text-green-400 mx-auto mb-3" />
-            <div className="text-3xl font-bold text-white mb-1">
-              {formatNumber(predictions.reduce((sum, p) => sum + (p.yes_pool || 0) + (p.no_pool || 0), 0))}
-            </div>
-            <div className="text-gray-400 text-sm">Total Pool</div>
-          </div>
-          <div className="card text-center">
-            <Users className="w-8 h-8 text-blue-400 mx-auto mb-3" />
-            <div className="text-3xl font-bold text-white mb-1">
-              {predictions.filter(p => p.status === 'active').length}
-            </div>
-            <div className="text-gray-400 text-sm">Active Predictions</div>
-          </div>
-          <div className="card text-center">
-            <Trophy className="w-8 h-8 text-yellow-400 mx-auto mb-3" />
-            <div className="text-3xl font-bold text-white mb-1">
-              {predictions.filter(p => p.status === 'resolved').length}
-            </div>
-            <div className="text-gray-400 text-sm">Resolved</div>
-          </div>
-        </motion.div>
-
-        {/* Create Buttons */}
-        {isConnected && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-            className="mb-8 flex flex-wrap justify-center gap-4"
-          >
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => {
-                setCreateFromToken(false)
-                setShowCreateModal(true)
-              }}
-              className="px-6 py-3 bg-gradient-to-r from-violet-600 to-fuchsia-600 rounded-xl text-white font-semibold flex items-center gap-2"
-            >
-              <Plus className="w-5 h-5" />
-              <span>Create from URL</span>
-            </motion.button>
-            {userTokens.length > 0 && (
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setShowTokenSelectModal(true)}
-                className="px-6 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-xl text-white font-semibold flex items-center gap-2"
-              >
-                <Coins className="w-5 h-5" />
-                <span>Create from My Tokens ({userTokens.length})</span>
-              </motion.button>
-            )}
-          </motion.div>
-        )}
-
-        {/* Filters & Sort */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-          className="mb-8"
+          className="mb-6"
         >
           <div className="card p-4">
             <div className="flex flex-wrap items-center gap-4">
@@ -577,6 +508,75 @@ const PredictionMarket: React.FC = () => {
           </div>
         </motion.div>
 
+        {/* Create Buttons */}
+        {isConnected && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="mb-6 flex flex-wrap justify-center gap-4"
+          >
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => {
+                setCreateFromToken(false)
+                setShowCreateModal(true)
+              }}
+              className="px-6 py-3 bg-gradient-to-r from-violet-600 to-fuchsia-600 rounded-xl text-white font-semibold flex items-center gap-2 shadow-lg shadow-violet-500/25"
+            >
+              <Plus className="w-5 h-5" />
+              <span>Create from URL</span>
+            </motion.button>
+            {userTokens.length > 0 && (
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setShowTokenSelectModal(true)}
+                className="px-6 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-xl text-white font-semibold flex items-center gap-2 shadow-lg shadow-blue-500/25"
+              >
+                <Coins className="w-5 h-5" />
+                <span>Create from My Tokens ({userTokens.length})</span>
+              </motion.button>
+            )}
+          </motion.div>
+        )}
+
+        {/* Stats */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+          className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8"
+        >
+          <div className="card text-center">
+            <BarChart3 className="w-8 h-8 text-violet-400 mx-auto mb-3" />
+            <div className="text-3xl font-bold text-white mb-1">{predictions.length}</div>
+            <div className="text-gray-400 text-sm">Markets</div>
+          </div>
+          <div className="card text-center">
+            <DollarSign className="w-8 h-8 text-green-400 mx-auto mb-3" />
+            <div className="text-3xl font-bold text-white mb-1">
+              {formatNumber(predictions.reduce((sum, p) => sum + (p.yes_pool || 0) + (p.no_pool || 0), 0))}
+            </div>
+            <div className="text-gray-400 text-sm">Total Pool (ALGO)</div>
+          </div>
+          <div className="card text-center">
+            <Users className="w-8 h-8 text-blue-400 mx-auto mb-3" />
+            <div className="text-3xl font-bold text-white mb-1">
+              {predictions.filter(p => p.status === 'active').length}
+            </div>
+            <div className="text-gray-400 text-sm">Active</div>
+          </div>
+          <div className="card text-center">
+            <Trophy className="w-8 h-8 text-yellow-400 mx-auto mb-3" />
+            <div className="text-3xl font-bold text-white mb-1">
+              {predictions.filter(p => p.status === 'resolved').length}
+            </div>
+            <div className="text-gray-400 text-sm">Resolved</div>
+          </div>
+        </motion.div>
+
         {/* Predictions Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {predictions.map((prediction, index) => (
@@ -588,13 +588,13 @@ const PredictionMarket: React.FC = () => {
               whileHover={{ y: -5 }}
               className="card hover:border-violet-500/50 transition-all"
             >
-              {/* Thumbnail */}
+              {/* Thumbnail - YouTube style (16:9) */}
               {prediction.thumbnail && (
-                <div className="mb-4 rounded-xl overflow-hidden">
+                <div className="mb-4 rounded-xl overflow-hidden aspect-video bg-white/5">
                   <img
                     src={prediction.thumbnail}
                     alt={prediction.platform}
-                    className="w-full h-48 object-cover"
+                    className="w-full h-full object-cover"
                     onError={(e) => {
                       (e.target as HTMLImageElement).style.display = 'none'
                     }}
@@ -651,10 +651,26 @@ const PredictionMarket: React.FC = () => {
                     <span className="text-gray-400 text-sm">Current {prediction.metric_type}</span>
                   </div>
                   <div className="text-4xl font-bold text-white mb-1">
-                    {formatNumber(prediction.current_value || prediction.initial_value)}
+                    {formatNumber(
+                      prediction.status === 'resolved' 
+                        ? (prediction.final_value || prediction.current_value || prediction.initial_value)
+                        : (prediction.current_value || prediction.initial_value)
+                    )}
                   </div>
                   <div className="text-sm text-gray-400">
-                    Target: <span className="text-violet-400 font-semibold">{formatNumber(prediction.target_value)}</span>
+                    {prediction.status === 'resolved' ? (
+                      <>
+                        Final: <span className="text-violet-400 font-semibold">{formatNumber(prediction.final_value || 0)}</span>
+                        {' | '}
+                        Target: <span className="text-violet-400 font-semibold">{formatNumber(prediction.target_value)}</span>
+                      </>
+                    ) : (
+                      <>
+                        Target: <span className="text-violet-400 font-semibold">{formatNumber(prediction.target_value)}</span>
+                        {' | '}
+                        Started: <span className="text-gray-500">{formatNumber(prediction.initial_value)}</span>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -663,18 +679,33 @@ const PredictionMarket: React.FC = () => {
                   <div className="flex justify-between text-xs text-gray-400 mb-1">
                     <span>Progress</span>
                     <span>
-                      {Math.min(100, ((prediction.current_value || prediction.initial_value) / prediction.target_value) * 100).toFixed(1)}%
+                      {(() => {
+                        const currentVal = prediction.status === 'resolved'
+                          ? (prediction.final_value || prediction.current_value || prediction.initial_value)
+                          : (prediction.current_value || prediction.initial_value)
+                        return Math.min(100, (currentVal / prediction.target_value) * 100).toFixed(1)
+                      })()}%
                     </span>
                   </div>
                   <div className="w-full h-3 bg-white/10 rounded-full overflow-hidden">
                     <motion.div
                       initial={{ width: 0 }}
                       animate={{ 
-                        width: `${Math.min(100, ((prediction.current_value || prediction.initial_value) / prediction.target_value) * 100)}%` 
+                        width: `${(() => {
+                          const currentVal = prediction.status === 'resolved'
+                            ? (prediction.final_value || prediction.current_value || prediction.initial_value)
+                            : (prediction.current_value || prediction.initial_value)
+                          return Math.min(100, (currentVal / prediction.target_value) * 100)
+                        })()}%` 
                       }}
                       transition={{ duration: 0.5 }}
                       className={`h-full rounded-full ${
-                        (prediction.current_value || prediction.initial_value) >= prediction.target_value
+                        (() => {
+                          const currentVal = prediction.status === 'resolved'
+                            ? (prediction.final_value || prediction.current_value || prediction.initial_value)
+                            : (prediction.current_value || prediction.initial_value)
+                          return currentVal >= prediction.target_value
+                        })()
                           ? 'bg-gradient-to-r from-green-500 to-emerald-500'
                           : 'bg-gradient-to-r from-violet-500 to-fuchsia-500'
                       }`}
@@ -683,7 +714,10 @@ const PredictionMarket: React.FC = () => {
                 </div>
 
                 {/* Completion Status */}
-                {(prediction.current_value || prediction.initial_value) >= prediction.target_value && prediction.status === 'active' && (
+                {(() => {
+                  const currentVal = prediction.current_value || prediction.initial_value
+                  return currentVal >= prediction.target_value && prediction.status === 'active'
+                })() && (
                   <motion.div
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
@@ -705,7 +739,12 @@ const PredictionMarket: React.FC = () => {
                   <div className="flex items-center gap-1 text-violet-400">
                     <TrendingUp className="w-3 h-3" />
                     <span>
-                      +{formatNumber((prediction.current_value || prediction.initial_value) - prediction.initial_value)}
+                      +{formatNumber((() => {
+                        const currentVal = prediction.status === 'resolved'
+                          ? (prediction.final_value || prediction.current_value || prediction.initial_value)
+                          : (prediction.current_value || prediction.initial_value)
+                        return currentVal - prediction.initial_value
+                      })())}
                     </span>
                   </div>
                 </div>

@@ -11,6 +11,7 @@ import base64
 import traceback
 import secrets
 import logging
+import uuid
 from functools import wraps
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -336,6 +337,46 @@ def init_db():
             channel_id TEXT NOT NULL,
             channel_title TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Create predictions table for prediction markets
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS predictions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            prediction_id TEXT UNIQUE NOT NULL,
+            creator_address TEXT NOT NULL,
+            content_url TEXT NOT NULL,
+            platform TEXT NOT NULL,
+            metric_type TEXT NOT NULL,
+            target_value REAL NOT NULL,
+            timeframe_hours INTEGER NOT NULL,
+            end_time TIMESTAMP NOT NULL,
+            yes_pool REAL DEFAULT 0,
+            no_pool REAL DEFAULT 0,
+            status TEXT DEFAULT 'active',
+            outcome TEXT,
+            initial_value REAL,
+            final_value REAL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Create prediction_trades table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS prediction_trades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            prediction_id TEXT NOT NULL,
+            trader_address TEXT NOT NULL,
+            side TEXT NOT NULL,
+            amount REAL NOT NULL,
+            odds REAL NOT NULL,
+            potential_payout REAL NOT NULL,
+            transaction_id TEXT,
+            status TEXT DEFAULT 'pending',
+            payout_amount REAL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (prediction_id) REFERENCES predictions (prediction_id)
         )
     ''')
     
@@ -2134,6 +2175,586 @@ def get_youtube_video_info():
         
     except Exception as e:
         logger.error(f"Error fetching YouTube video info: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+# ==================== PREDICTION MARKET ENDPOINTS ====================
+
+@app.route('/api/predictions/create', methods=['POST'])
+@cross_origin(supports_credentials=True)
+def create_prediction():
+    """Create a new prediction market"""
+    try:
+        data = request.get_json()
+        creator_address = data.get('creator_address', '').strip()
+        content_url = data.get('content_url', '').strip()
+        platform = data.get('platform', '').lower()
+        metric_type = data.get('metric_type', '').lower()  # likes, comments, views, shares, reposts
+        target_value = float(data.get('target_value', 0))
+        timeframe_hours = int(data.get('timeframe_hours', 24))
+        
+        if not all([creator_address, content_url, platform, metric_type, target_value > 0, timeframe_hours > 0]):
+            return jsonify({"success": False, "error": "Missing required fields"}), 400
+        
+        # Generate unique prediction ID
+        import hashlib
+        import time
+        prediction_id = hashlib.sha256(
+            f"{creator_address}:{content_url}:{time.time()}".encode()
+        ).hexdigest()[:16].upper()
+        
+        # Calculate end time
+        from datetime import datetime, timedelta
+        end_time = datetime.now() + timedelta(hours=timeframe_hours)
+        
+        # Get initial metric value
+        initial_value = 0
+        try:
+            scraper = WebScraper()
+            if platform == 'youtube':
+                # Use YouTube API
+                video_id = content_url.split('v=')[-1].split('&')[0]
+                if youtube_sessions:
+                    session_key = list(youtube_sessions.keys())[0]
+                    session_data = youtube_sessions[session_key]
+                    credentials_data = session_data['credentials']
+                    credentials = Credentials(
+                        token=credentials_data['token'],
+                        refresh_token=credentials_data['refresh_token'],
+                        token_uri=credentials_data['token_uri'],
+                        client_id=credentials_data['client_id'],
+                        client_secret=credentials_data['client_secret'],
+                        scopes=credentials_data['scopes']
+                    )
+                    youtube = build('youtube', 'v3', credentials=credentials)
+                    video_response = youtube.videos().list(part='statistics', id=video_id).execute()
+                    if video_response.get('items'):
+                        stats = video_response['items'][0]['statistics']
+                        if metric_type == 'views':
+                            initial_value = int(stats.get('viewCount', 0))
+                        elif metric_type == 'likes':
+                            initial_value = int(stats.get('likeCount', 0))
+                        elif metric_type == 'comments':
+                            initial_value = int(stats.get('commentCount', 0))
+            else:
+                # Use web scraper
+                scraped = scraper.scrape_content(content_url, platform)
+                if scraped and scraped.get('engagement'):
+                    engagement = scraped['engagement']
+                    initial_value = engagement.get(metric_type, 0) or engagement.get('likes', 0)
+        except Exception as e:
+            logger.warning(f"Could not fetch initial value: {e}")
+        
+        # Save to database
+        conn = sqlite3.connect('creatorvault.db')
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO predictions 
+            (prediction_id, creator_address, content_url, platform, metric_type, 
+             target_value, timeframe_hours, end_time, initial_value, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
+        ''', (prediction_id, creator_address, content_url, platform, metric_type,
+              target_value, timeframe_hours, end_time.isoformat(), initial_value))
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"✅ Prediction created: {prediction_id} by {creator_address}")
+        
+        return jsonify({
+            "success": True,
+            "prediction": {
+                "prediction_id": prediction_id,
+                "creator_address": creator_address,
+                "content_url": content_url,
+                "platform": platform,
+                "metric_type": metric_type,
+                "target_value": target_value,
+                "timeframe_hours": timeframe_hours,
+                "end_time": end_time.isoformat(),
+                "initial_value": initial_value,
+                "yes_pool": 0,
+                "no_pool": 0,
+                "status": "active"
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error creating prediction: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/predictions', methods=['GET'])
+@cross_origin(supports_credentials=True)
+def get_predictions():
+    """Get all predictions"""
+    try:
+        status_filter = request.args.get('status', 'active')  # active, resolved, all
+        
+        conn = sqlite3.connect('creatorvault.db')
+        cursor = conn.cursor()
+        
+        if status_filter == 'all':
+            cursor.execute('''
+                SELECT prediction_id, creator_address, content_url, platform, metric_type,
+                       target_value, timeframe_hours, end_time, yes_pool, no_pool,
+                       status, outcome, initial_value, final_value, created_at
+                FROM predictions
+                ORDER BY created_at DESC
+            ''')
+        else:
+            cursor.execute('''
+                SELECT prediction_id, creator_address, content_url, platform, metric_type,
+                       target_value, timeframe_hours, end_time, yes_pool, no_pool,
+                       status, outcome, initial_value, final_value, created_at
+                FROM predictions
+                WHERE status = ?
+                ORDER BY created_at DESC
+            ''', (status_filter,))
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        predictions = []
+        for row in rows:
+            predictions.append({
+                "prediction_id": row[0],
+                "creator_address": row[1],
+                "content_url": row[2],
+                "platform": row[3],
+                "metric_type": row[4],
+                "target_value": row[5],
+                "timeframe_hours": row[6],
+                "end_time": row[7],
+                "yes_pool": row[8],
+                "no_pool": row[9],
+                "status": row[10],
+                "outcome": row[11],
+                "initial_value": row[12],
+                "final_value": row[13],
+                "created_at": row[14]
+            })
+        
+        return jsonify({
+            "success": True,
+            "predictions": predictions
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching predictions: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/predictions/<prediction_id>', methods=['GET'])
+@cross_origin(supports_credentials=True)
+def get_prediction(prediction_id):
+    """Get prediction details with real-time odds"""
+    try:
+        conn = sqlite3.connect('creatorvault.db')
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT prediction_id, creator_address, content_url, platform, metric_type,
+                   target_value, timeframe_hours, end_time, yes_pool, no_pool,
+                   status, outcome, initial_value, final_value, created_at
+            FROM predictions
+            WHERE prediction_id = ?
+        ''', (prediction_id,))
+        
+        row = cursor.fetchone()
+        if not row:
+            return jsonify({"success": False, "error": "Prediction not found"}), 404
+        
+        # Get current metric value
+        current_value = row[12]  # initial_value
+        try:
+            scraper = WebScraper()
+            if row[3] == 'youtube':  # platform
+                video_id = row[2].split('v=')[-1].split('&')[0]  # content_url
+                if youtube_sessions:
+                    session_key = list(youtube_sessions.keys())[0]
+                    session_data = youtube_sessions[session_key]
+                    credentials_data = session_data['credentials']
+                    credentials = Credentials(
+                        token=credentials_data['token'],
+                        refresh_token=credentials_data['refresh_token'],
+                        token_uri=credentials_data['token_uri'],
+                        client_id=credentials_data['client_id'],
+                        client_secret=credentials_data['client_secret'],
+                        scopes=credentials_data['scopes']
+                    )
+                    youtube = build('youtube', 'v3', credentials=credentials)
+                    video_response = youtube.videos().list(part='statistics', id=video_id).execute()
+                    if video_response.get('items'):
+                        stats = video_response['items'][0]['statistics']
+                        if row[4] == 'views':  # metric_type
+                            current_value = int(stats.get('viewCount', 0))
+                        elif row[4] == 'likes':
+                            current_value = int(stats.get('likeCount', 0))
+                        elif row[4] == 'comments':
+                            current_value = int(stats.get('commentCount', 0))
+            else:
+                scraped = scraper.scrape_content(row[2], row[3])
+                if scraped and scraped.get('engagement'):
+                    engagement = scraped['engagement']
+                    current_value = engagement.get(row[4], 0) or engagement.get('likes', 0)
+        except Exception as e:
+            logger.warning(f"Could not fetch current value: {e}")
+        
+        # Calculate odds
+        yes_pool = row[8] or 0.01  # Prevent division by zero
+        no_pool = row[9] or 0.01
+        total_pool = yes_pool + no_pool
+        
+        yes_odds = (total_pool / yes_pool) if yes_pool > 0 else 1.0
+        no_odds = (total_pool / no_pool) if no_pool > 0 else 1.0
+        
+        # Calculate time remaining
+        from datetime import datetime
+        end_time = datetime.fromisoformat(row[7])
+        time_remaining = (end_time - datetime.now()).total_seconds() / 3600  # hours
+        
+        conn.close()
+        
+        return jsonify({
+            "success": True,
+            "prediction": {
+                "prediction_id": row[0],
+                "creator_address": row[1],
+                "content_url": row[2],
+                "platform": row[3],
+                "metric_type": row[4],
+                "target_value": row[5],
+                "timeframe_hours": row[6],
+                "end_time": row[7],
+                "yes_pool": yes_pool,
+                "no_pool": no_pool,
+                "status": row[10],
+                "outcome": row[11],
+                "initial_value": row[12],
+                "final_value": row[13],
+                "created_at": row[14],
+                "current_value": current_value,
+                "yes_odds": round(yes_odds, 2),
+                "no_odds": round(no_odds, 2),
+                "time_remaining_hours": round(time_remaining, 2)
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching prediction: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/predictions/<prediction_id>/trade', methods=['POST'])
+@cross_origin(supports_credentials=True)
+def trade_prediction(prediction_id):
+    """Trade on a prediction (YES or NO)"""
+    try:
+        data = request.get_json()
+        trader_address = data.get('trader_address', '').strip()
+        side = data.get('side', '').upper()  # YES or NO
+        amount = float(data.get('amount', 0))  # ALGO amount
+        
+        if side not in ['YES', 'NO']:
+            return jsonify({"success": False, "error": "Side must be YES or NO"}), 400
+        
+        if amount <= 0:
+            return jsonify({"success": False, "error": "Amount must be greater than 0"}), 400
+        
+        # Get prediction
+        conn = sqlite3.connect('creatorvault.db')
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT yes_pool, no_pool, status, end_time
+            FROM predictions
+            WHERE prediction_id = ?
+        ''', (prediction_id,))
+        
+        row = cursor.fetchone()
+        if not row:
+            return jsonify({"success": False, "error": "Prediction not found"}), 404
+        
+        yes_pool, no_pool, status, end_time = row
+        
+        if status != 'active':
+            return jsonify({"success": False, "error": "Prediction is not active"}), 400
+        
+        # Check if expired
+        from datetime import datetime
+        if datetime.fromisoformat(end_time) < datetime.now():
+            return jsonify({"success": False, "error": "Prediction has expired"}), 400
+        
+        # Calculate odds
+        yes_pool = yes_pool or 0.01
+        no_pool = no_pool or 0.01
+        total_pool = yes_pool + no_pool
+        
+        if side == 'YES':
+            new_yes_pool = yes_pool + amount
+            new_total = new_yes_pool + no_pool
+            odds = new_total / new_yes_pool
+            potential_payout = amount * odds
+            cursor.execute('''
+                UPDATE predictions SET yes_pool = ? WHERE prediction_id = ?
+            ''', (new_yes_pool, prediction_id))
+        else:
+            new_no_pool = no_pool + amount
+            new_total = yes_pool + new_no_pool
+            odds = new_total / new_no_pool
+            potential_payout = amount * odds
+            cursor.execute('''
+                UPDATE predictions SET no_pool = ? WHERE prediction_id = ?
+            ''', (new_no_pool, prediction_id))
+        
+        # Record trade
+        import uuid
+        trade_id = str(uuid.uuid4())
+        cursor.execute('''
+            INSERT INTO prediction_trades
+            (prediction_id, trader_address, side, amount, odds, potential_payout, status)
+            VALUES (?, ?, ?, ?, ?, ?, 'pending')
+        ''', (prediction_id, trader_address, side, amount, odds, potential_payout))
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"✅ Prediction trade: {side} {amount} ALGO on {prediction_id} by {trader_address}")
+        
+        return jsonify({
+            "success": True,
+            "trade": {
+                "trade_id": trade_id,
+                "prediction_id": prediction_id,
+                "side": side,
+                "amount": amount,
+                "odds": round(odds, 2),
+                "potential_payout": round(potential_payout, 2)
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error trading prediction: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/predictions/<prediction_id>/resolve', methods=['POST'])
+@cross_origin(supports_credentials=True)
+def resolve_prediction(prediction_id):
+    """Resolve a prediction and payout winners"""
+    try:
+        conn = sqlite3.connect('creatorvault.db')
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT content_url, platform, metric_type, target_value, yes_pool, no_pool, status
+            FROM predictions
+            WHERE prediction_id = ?
+        ''', (prediction_id,))
+        
+        row = cursor.fetchone()
+        if not row:
+            return jsonify({"success": False, "error": "Prediction not found"}), 404
+        
+        content_url, platform, metric_type, target_value, yes_pool, no_pool, status = row
+        
+        if status != 'active':
+            return jsonify({"success": False, "error": "Prediction already resolved"}), 400
+        
+        # Get final metric value
+        final_value = 0
+        try:
+            scraper = WebScraper()
+            if platform == 'youtube':
+                video_id = content_url.split('v=')[-1].split('&')[0]
+                if youtube_sessions:
+                    session_key = list(youtube_sessions.keys())[0]
+                    session_data = youtube_sessions[session_key]
+                    credentials_data = session_data['credentials']
+                    credentials = Credentials(
+                        token=credentials_data['token'],
+                        refresh_token=credentials_data['refresh_token'],
+                        token_uri=credentials_data['token_uri'],
+                        client_id=credentials_data['client_id'],
+                        client_secret=credentials_data['client_secret'],
+                        scopes=credentials_data['scopes']
+                    )
+                    youtube = build('youtube', 'v3', credentials=credentials)
+                    video_response = youtube.videos().list(part='statistics', id=video_id).execute()
+                    if video_response.get('items'):
+                        stats = video_response['items'][0]['statistics']
+                        if metric_type == 'views':
+                            final_value = int(stats.get('viewCount', 0))
+                        elif metric_type == 'likes':
+                            final_value = int(stats.get('likeCount', 0))
+                        elif metric_type == 'comments':
+                            final_value = int(stats.get('commentCount', 0))
+            else:
+                scraped = scraper.scrape_content(content_url, platform)
+                if scraped and scraped.get('engagement'):
+                    engagement = scraped['engagement']
+                    final_value = engagement.get(metric_type, 0) or engagement.get('likes', 0)
+        except Exception as e:
+            logger.error(f"Error fetching final value: {e}")
+            return jsonify({"success": False, "error": f"Could not fetch final metric: {e}"}), 500
+        
+        # Determine outcome
+        outcome = 'YES' if final_value >= target_value else 'NO'
+        total_pool = yes_pool + no_pool
+        
+        # Update prediction
+        cursor.execute('''
+            UPDATE predictions
+            SET status = 'resolved', outcome = ?, final_value = ?
+            WHERE prediction_id = ?
+        ''', (outcome, final_value, prediction_id))
+        
+        # Get winning trades and calculate payouts
+        cursor.execute('''
+            SELECT id, trader_address, amount, odds, potential_payout
+            FROM prediction_trades
+            WHERE prediction_id = ? AND side = ? AND status = 'pending'
+        ''', (prediction_id, outcome))
+        
+        winning_trades = cursor.fetchall()
+        
+        # Calculate payout per trade (proportional to pool)
+        for trade_id, trader_address, amount, odds, potential_payout in winning_trades:
+            # Actual payout based on pool size
+            actual_payout = potential_payout if total_pool >= potential_payout else total_pool * (amount / (yes_pool if outcome == 'YES' else no_pool))
+            
+            cursor.execute('''
+                UPDATE prediction_trades
+                SET status = 'won', payout_amount = ?
+                WHERE id = ?
+            ''', (actual_payout, trade_id))
+            
+            logger.info(f"💰 Payout: {trader_address} wins {actual_payout} ALGO on {prediction_id}")
+        
+        # Mark losing trades
+        cursor.execute('''
+            UPDATE prediction_trades
+            SET status = 'lost', payout_amount = 0
+            WHERE prediction_id = ? AND side != ? AND status = 'pending'
+        ''', (prediction_id, outcome))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            "success": True,
+            "prediction": {
+                "prediction_id": prediction_id,
+                "outcome": outcome,
+                "final_value": final_value,
+                "target_value": target_value,
+                "winners": len(winning_trades)
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error resolving prediction: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/predictions/auto-resolve', methods=['POST'])
+@cross_origin(supports_credentials=True)
+def auto_resolve_expired():
+    """Auto-resolve all expired predictions"""
+    try:
+        conn = sqlite3.connect('creatorvault.db')
+        cursor = conn.cursor()
+        
+        # Find expired active predictions
+        cursor.execute('''
+            SELECT prediction_id
+            FROM predictions
+            WHERE status = 'active' AND end_time < ?
+        ''', (datetime.now().isoformat(),))
+        
+        expired = cursor.fetchall()
+        resolved_count = 0
+        
+        for (prediction_id,) in expired:
+            try:
+                # Get prediction data
+                cursor.execute('''
+                    SELECT content_url, platform, metric_type, target_value, yes_pool, no_pool
+                    FROM predictions
+                    WHERE prediction_id = ?
+                ''', (prediction_id,))
+                
+                row = cursor.fetchone()
+                if row:
+                    content_url, platform, metric_type, target_value, yes_pool, no_pool = row
+                    
+                    # Get final value (same logic as resolve_prediction)
+                    final_value = 0
+                    try:
+                        scraper = WebScraper()
+                        if platform == 'youtube':
+                            video_id = content_url.split('v=')[-1].split('&')[0]
+                            if youtube_sessions:
+                                session_key = list(youtube_sessions.keys())[0]
+                                session_data = youtube_sessions[session_key]
+                                credentials_data = session_data['credentials']
+                                credentials = Credentials(
+                                    token=credentials_data['token'],
+                                    refresh_token=credentials_data['refresh_token'],
+                                    token_uri=credentials_data['token_uri'],
+                                    client_id=credentials_data['client_id'],
+                                    client_secret=credentials_data['client_secret'],
+                                    scopes=credentials_data['scopes']
+                                )
+                                youtube = build('youtube', 'v3', credentials=credentials)
+                                video_response = youtube.videos().list(part='statistics', id=video_id).execute()
+                                if video_response.get('items'):
+                                    stats = video_response['items'][0]['statistics']
+                                    if metric_type == 'views':
+                                        final_value = int(stats.get('viewCount', 0))
+                                    elif metric_type == 'likes':
+                                        final_value = int(stats.get('likeCount', 0))
+                                    elif metric_type == 'comments':
+                                        final_value = int(stats.get('commentCount', 0))
+                        else:
+                            scraped = scraper.scrape_content(content_url, platform)
+                            if scraped and scraped.get('engagement'):
+                                engagement = scraped['engagement']
+                                final_value = engagement.get(metric_type, 0) or engagement.get('likes', 0)
+                    except Exception as e:
+                        logger.error(f"Error fetching final value for {prediction_id}: {e}")
+                        continue
+                    
+                    outcome = 'YES' if final_value >= target_value else 'NO'
+                    total_pool = yes_pool + no_pool
+                    
+                    # Update prediction
+                    cursor.execute('''
+                        UPDATE predictions
+                        SET status = 'resolved', outcome = ?, final_value = ?
+                        WHERE prediction_id = ?
+                    ''', (outcome, final_value, prediction_id))
+                    
+                    # Update trades
+                    cursor.execute('''
+                        UPDATE prediction_trades
+                        SET status = CASE 
+                            WHEN side = ? THEN 'won'
+                            ELSE 'lost'
+                        END,
+                        payout_amount = CASE
+                            WHEN side = ? THEN potential_payout
+                            ELSE 0
+                        END
+                        WHERE prediction_id = ? AND status = 'pending'
+                    ''', (outcome, outcome, prediction_id))
+                    
+                    resolved_count += 1
+                    logger.info(f"✅ Auto-resolved prediction {prediction_id}: {outcome} (final: {final_value})")
+            except Exception as e:
+                logger.error(f"Error auto-resolving {prediction_id}: {e}")
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            "success": True,
+            "resolved_count": resolved_count
+        })
+        
+    except Exception as e:
+        logger.error(f"Error auto-resolving predictions: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 if __name__ == '__main__':

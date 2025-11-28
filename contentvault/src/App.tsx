@@ -12,6 +12,7 @@ import TradingMarketplace from './pages/TradingMarketplace'
 import YouTubeCallback from './pages/YouTubeCallback'
 import MultiPlatformTokenization from './pages/MultiPlatformTokenization'
 import YouTubeVideos from './pages/YouTubeVideos'
+import PredictionMarket from './pages/PredictionMarket'
 
 function App() {
   return (
@@ -29,6 +30,7 @@ function App() {
               <Route path="creator/:id" element={<CreatorProfile />} />
               <Route path="trade/:symbol" element={<TradingMarketplace />} />
               <Route path="youtube/videos" element={<YouTubeVideos />} />
+              <Route path="predictions" element={<PredictionMarket />} />
               <Route path="auth/youtube/callback" element={<YouTubeCallback />} />
             </Route>
           </Routes>

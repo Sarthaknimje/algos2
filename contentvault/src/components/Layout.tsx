@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Menu, X, Wallet, User, Rocket, Home, BarChart3, Play } from 'lucide-react'
+import { Menu, X, Wallet, User, Rocket, Home, BarChart3, Play, TrendingUp } from 'lucide-react'
 import { useWallet } from '../contexts/WalletContext'
 import { PeraWalletIcon } from '../assets/icons'
 
@@ -15,6 +15,7 @@ const Layout: React.FC = () => {
     { name: 'Dashboard', href: '/dashboard', icon: BarChart3 },
     { name: 'Tokenize', href: '/tokenize', icon: Rocket },
     { name: 'Marketplace', href: '/marketplace', icon: BarChart3 },
+    { name: 'Predictions', href: '/predictions', icon: TrendingUp },
     { name: 'YouTube Videos', href: '/youtube/videos', icon: Play },
     { name: 'Profile', href: '/profile', icon: User },
   ]

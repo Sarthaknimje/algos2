@@ -48,7 +48,6 @@ const MultiPlatformTokenization: React.FC = () => {
   const { isConnected, address, peraWallet, connectWallet } = useWallet()
   const [selectedPlatform, setSelectedPlatform] = useState<Platform | null>(null)
   const [contentUrl, setContentUrl] = useState('')
-  const [username, setUsername] = useState('')
   const [scrapedContent, setScrapedContent] = useState<SocialMediaContent | null>(null)
   const [verificationStatus, setVerificationStatus] = useState<{
     verified: boolean, 
@@ -137,7 +136,6 @@ const MultiPlatformTokenization: React.FC = () => {
   const handlePlatformSelect = (platform: Platform) => {
     setSelectedPlatform(platform)
     setContentUrl('')
-    setUsername('')
     setScrapedContent(null)
     setVerificationStatus(null)
     setError(null)
@@ -171,12 +169,6 @@ const MultiPlatformTokenization: React.FC = () => {
       }
     }
 
-    // For Instagram, Twitter, LinkedIn - require username for verification
-    if (selectedPlatform !== 'youtube' && !username.trim()) {
-      setError(`Please enter your ${platformNames[selectedPlatform]} username to verify ownership`)
-      return
-    }
-
     // Validate URL
     if (!socialMediaService.validateUrl(contentUrl, selectedPlatform)) {
       setError(`Invalid ${platformNames[selectedPlatform]} URL`)
@@ -189,25 +181,17 @@ const MultiPlatformTokenization: React.FC = () => {
     setVerificationStatus(null)
 
     try {
-      // For YouTube, no username needed - uses API
+      // Scrape content (no username needed for any platform)
       const result = await socialMediaService.scrapeContentFromUrl(
         contentUrl,
-        selectedPlatform,
-        selectedPlatform === 'youtube' ? undefined : username.trim() || undefined
+        selectedPlatform
       )
 
       if (result.success && result.content) {
         setScrapedContent(result.content)
         
-        // Get verification status from response
-        const verification = (result as any).verification
-        if (verification) {
-          setVerificationStatus(verification)
-          if (!verification.verified) {
-            setError(verification.message || 'Ownership verification failed')
-          }
-        } else if (selectedPlatform === 'youtube') {
-          // For YouTube, check ownership from content response
+        // For YouTube, check ownership from content response
+        if (selectedPlatform === 'youtube') {
           const isOwned = result.content.isOwned !== false
           const ownershipMsg = result.content.ownershipMessage || (isOwned ? 'You own this video and can tokenize it.' : 'This video belongs to another channel.')
           
@@ -218,27 +202,8 @@ const MultiPlatformTokenization: React.FC = () => {
             setError('🚫 You can only tokenize videos from your connected YouTube channel. Connect your channel or select your own video.')
           }
         } else {
-          // Fallback: verify separately for Instagram, Twitter, LinkedIn
-          // Pass verification code if we have one from previous attempt
-          const verifyResult = await socialMediaService.verifyUrlOwnership(
-            contentUrl,
-            selectedPlatform,
-            username.trim() || undefined,
-            address || undefined,  // Pass wallet address for bio verification
-            verificationStatus?.verification_code || undefined  // Pass existing verification code if available
-          )
-          setVerificationStatus(verifyResult)
-          if (!verifyResult.verified) {
-            setError(verifyResult.message || 'Ownership verification failed')
-          }
-        }
-        
-        // For Instagram Reels without username in URL, prompt for username
-        if (selectedPlatform === 'instagram' && !verificationStatus?.verified && !error) {
-          const urlUsername = socialMediaService.extractUsernameFromUrl(contentUrl, selectedPlatform)
-          if (!urlUsername && !username.trim()) {
-            setError('Please enter your Instagram username to verify ownership.')
-          }
+          // For Instagram, Twitter, LinkedIn - no verification required, allow tokenization
+          setVerificationStatus({ verified: true, message: '✅ Content ready for tokenization' })
         }
       } else {
         setError(result.error || 'Failed to scrape content. Please check the URL and try again.')
@@ -261,9 +226,9 @@ const MultiPlatformTokenization: React.FC = () => {
       return
     }
 
-    // STRICT: Require verification before tokenizing
-    if (!verificationStatus || !verificationStatus.verified) {
-      setError('⚠️ Ownership verification required! Please enter your username and verify ownership before tokenizing.')
+    // Only require verification for YouTube (other platforms don't need verification)
+    if (scrapedContent?.platform === 'youtube' && (!verificationStatus || !verificationStatus.verified)) {
+      setError('⚠️ You can only tokenize videos from your connected YouTube channel.')
       return
     }
 
@@ -277,24 +242,8 @@ const MultiPlatformTokenization: React.FC = () => {
     setError(null)
 
     try {
-      // Skip ownership verification for YouTube (already verified via API)
-      if (scrapedContent.platform !== 'youtube') {
-        // Verify ownership again before tokenizing for Instagram, Twitter, LinkedIn
-        const username = socialMediaService.extractUsernameFromUrl(scrapedContent.url, scrapedContent.platform as 'instagram' | 'twitter' | 'linkedin')
-        const verificationResult = await socialMediaService.verifyUrlOwnership(
-          scrapedContent.url,
-          scrapedContent.platform as 'instagram' | 'twitter' | 'linkedin',
-          username || undefined,
-          address || undefined,  // Pass wallet address for bio verification
-          verificationStatus?.verification_code || undefined  // Pass verification code if available
-        )
-
-        if (!verificationResult.verified) {
-          setError(verificationResult.message || 'Ownership verification failed. You can only tokenize your own content.')
-          setTokenizing(false)
-          return
-        }
-      }
+      // Skip ownership verification for Instagram, Twitter, LinkedIn - allow tokenization
+      // Only YouTube requires ownership verification (via API)
 
       // Create ASA using Pera Wallet
       // Use 1,000,000 tokens as default supply for bonding curve
@@ -373,7 +322,6 @@ const MultiPlatformTokenization: React.FC = () => {
       // Clear form data
       setScrapedContent(null)
       setContentUrl('')
-      setUsername('')
       setVerificationStatus(null)
       setError(null)
       
@@ -495,32 +443,6 @@ const MultiPlatformTokenization: React.FC = () => {
                   className="w-full pl-12 pr-4 py-4 bg-white/5 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-primary-500 text-lg"
                 />
               </div>
-
-              {/* Username input for ownership verification (required for Instagram, Twitter, LinkedIn) */}
-              {selectedPlatform && selectedPlatform !== 'youtube' && (
-                <div className="relative">
-                  <Shield className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-yellow-400" />
-                  <input
-                    type="text"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value.replace('@', ''))}
-                    placeholder={`Your ${platformNames[selectedPlatform]} username (without @)`}
-                    className="w-full pl-12 pr-4 py-4 bg-yellow-500/10 border-2 border-yellow-500/30 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-yellow-500 text-lg"
-                  />
-                  <div className="mt-2 text-xs text-yellow-300">
-                    {selectedPlatform === 'instagram' ? (
-                      <>
-                        🔒 Required for ownership verification. 
-                        {socialMediaService.extractUsernameFromUrl(contentUrl, selectedPlatform) 
-                          ? ' Must match the username in the URL.' 
-                          : ' Instagram Reel URLs don\'t include username, so enter yours to verify.'}
-                      </>
-                    ) : (
-                      <>🔒 Required for ownership verification. Must match the username in the URL.</>
-                    )}
-                  </div>
-                </div>
-              )}
 
               {/* Verification Status */}
               {verificationStatus && (

@@ -219,10 +219,13 @@ const MultiPlatformTokenization: React.FC = () => {
           }
         } else {
           // Fallback: verify separately for Instagram, Twitter, LinkedIn
+          // Pass verification code if we have one from previous attempt
           const verifyResult = await socialMediaService.verifyUrlOwnership(
             contentUrl,
             selectedPlatform,
-            username.trim() || undefined
+            username.trim() || undefined,
+            address || undefined,  // Pass wallet address for bio verification
+            verificationStatus?.verification_code || undefined  // Pass existing verification code if available
           )
           setVerificationStatus(verifyResult)
           if (!verifyResult.verified) {
@@ -281,7 +284,9 @@ const MultiPlatformTokenization: React.FC = () => {
         const verificationResult = await socialMediaService.verifyUrlOwnership(
           scrapedContent.url,
           scrapedContent.platform as 'instagram' | 'twitter' | 'linkedin',
-          username || undefined
+          username || undefined,
+          address || undefined,  // Pass wallet address for bio verification
+          verificationStatus?.verification_code || undefined  // Pass verification code if available
         )
 
         if (!verificationResult.verified) {

@@ -2251,11 +2251,28 @@ def create_prediction():
                         elif metric_type == 'comments':
                             initial_value = int(stats.get('commentCount', 0))
             else:
-                # Use web scraper
-                scraped = scraper.scrape_content(content_url, platform)
+                # Use platform-specific scraping methods
+                scraped = None
+                if platform == 'instagram':
+                    scraped = scraper.scrape_instagram_reel(content_url)
+                elif platform == 'twitter':
+                    scraped = scraper.scrape_twitter_tweet(content_url)
+                elif platform == 'linkedin':
+                    scraped = scraper.scrape_linkedin_post(content_url)
+                
                 if scraped and scraped.get('engagement'):
                     engagement = scraped['engagement']
-                    initial_value = engagement.get(metric_type, 0) or engagement.get('likes', 0)
+                    # Get the specific metric or fallback to likes
+                    if metric_type == 'likes':
+                        initial_value = engagement.get('likes', 0) or engagement.get('reactions', 0) or 0
+                    elif metric_type == 'comments':
+                        initial_value = engagement.get('comments', 0) or engagement.get('replies', 0) or 0
+                    elif metric_type == 'views':
+                        initial_value = engagement.get('views', 0) or 0
+                    elif metric_type == 'shares' or metric_type == 'reposts':
+                        initial_value = engagement.get('shares', 0) or engagement.get('reposts', 0) or engagement.get('retweets', 0) or 0
+                    else:
+                        initial_value = engagement.get(metric_type, 0) or engagement.get('likes', 0) or 0
         except Exception as e:
             logger.warning(f"Could not fetch initial value: {e}")
         
@@ -2404,10 +2421,32 @@ def get_prediction(prediction_id):
                         elif row[4] == 'comments':
                             current_value = int(stats.get('commentCount', 0))
             else:
-                scraped = scraper.scrape_content(row[2], row[3])
+                # Use platform-specific scraping methods
+                content_url = row[2]
+                platform = row[3]
+                scraped = None
+                
+                if platform == 'instagram':
+                    scraped = scraper.scrape_instagram_reel(content_url)
+                elif platform == 'twitter':
+                    scraped = scraper.scrape_twitter_tweet(content_url)
+                elif platform == 'linkedin':
+                    scraped = scraper.scrape_linkedin_post(content_url)
+                
                 if scraped and scraped.get('engagement'):
                     engagement = scraped['engagement']
-                    current_value = engagement.get(row[4], 0) or engagement.get('likes', 0)
+                    metric_type = row[4]  # likes, comments, views, shares, reposts
+                    # Get the specific metric or fallback to likes
+                    if metric_type == 'likes':
+                        current_value = engagement.get('likes', 0) or engagement.get('reactions', 0) or 0
+                    elif metric_type == 'comments':
+                        current_value = engagement.get('comments', 0) or engagement.get('replies', 0) or 0
+                    elif metric_type == 'views':
+                        current_value = engagement.get('views', 0) or 0
+                    elif metric_type == 'shares' or metric_type == 'reposts':
+                        current_value = engagement.get('shares', 0) or engagement.get('reposts', 0) or engagement.get('retweets', 0) or 0
+                    else:
+                        current_value = engagement.get(metric_type, 0) or engagement.get('likes', 0) or 0
         except Exception as e:
             logger.warning(f"Could not fetch current value: {e}")
         
@@ -2612,10 +2651,28 @@ def resolve_prediction(prediction_id):
                         elif metric_type == 'comments':
                             final_value = int(stats.get('commentCount', 0))
             else:
-                scraped = scraper.scrape_content(content_url, platform)
+                # Use platform-specific scraping methods
+                scraped = None
+                if platform == 'instagram':
+                    scraped = scraper.scrape_instagram_reel(content_url)
+                elif platform == 'twitter':
+                    scraped = scraper.scrape_twitter_tweet(content_url)
+                elif platform == 'linkedin':
+                    scraped = scraper.scrape_linkedin_post(content_url)
+                
                 if scraped and scraped.get('engagement'):
                     engagement = scraped['engagement']
-                    final_value = engagement.get(metric_type, 0) or engagement.get('likes', 0)
+                    # Get the specific metric or fallback to likes
+                    if metric_type == 'likes':
+                        final_value = engagement.get('likes', 0) or engagement.get('reactions', 0) or 0
+                    elif metric_type == 'comments':
+                        final_value = engagement.get('comments', 0) or engagement.get('replies', 0) or 0
+                    elif metric_type == 'views':
+                        final_value = engagement.get('views', 0) or 0
+                    elif metric_type == 'shares' or metric_type == 'reposts':
+                        final_value = engagement.get('shares', 0) or engagement.get('reposts', 0) or engagement.get('retweets', 0) or 0
+                    else:
+                        final_value = engagement.get(metric_type, 0) or engagement.get('likes', 0) or 0
         except Exception as e:
             logger.error(f"Error fetching final value: {e}")
             return jsonify({"success": False, "error": f"Could not fetch final metric: {e}"}), 500
@@ -2738,10 +2795,28 @@ def auto_resolve_expired():
                                     elif metric_type == 'comments':
                                         final_value = int(stats.get('commentCount', 0))
                         else:
-                            scraped = scraper.scrape_content(content_url, platform)
+                            # Use platform-specific scraping methods
+                            scraped = None
+                            if platform == 'instagram':
+                                scraped = scraper.scrape_instagram_reel(content_url)
+                            elif platform == 'twitter':
+                                scraped = scraper.scrape_twitter_tweet(content_url)
+                            elif platform == 'linkedin':
+                                scraped = scraper.scrape_linkedin_post(content_url)
+                            
                             if scraped and scraped.get('engagement'):
                                 engagement = scraped['engagement']
-                                final_value = engagement.get(metric_type, 0) or engagement.get('likes', 0)
+                                # Get the specific metric or fallback to likes
+                                if metric_type == 'likes':
+                                    final_value = engagement.get('likes', 0) or engagement.get('reactions', 0) or 0
+                                elif metric_type == 'comments':
+                                    final_value = engagement.get('comments', 0) or engagement.get('replies', 0) or 0
+                                elif metric_type == 'views':
+                                    final_value = engagement.get('views', 0) or 0
+                                elif metric_type == 'shares' or metric_type == 'reposts':
+                                    final_value = engagement.get('shares', 0) or engagement.get('reposts', 0) or engagement.get('retweets', 0) or 0
+                                else:
+                                    final_value = engagement.get(metric_type, 0) or engagement.get('likes', 0) or 0
                     except Exception as e:
                         logger.error(f"Error fetching final value for {prediction_id}: {e}")
                         continue

@@ -2396,6 +2396,21 @@ def get_prediction(prediction_id):
         except Exception as e:
             logger.warning(f"Could not fetch current value: {e}")
         
+        # Auto-resolve if target is met
+        target_value = row[5]
+        status = row[10]
+        if status == 'active' and current_value >= target_value:
+            logger.info(f"🎯 Target reached for {prediction_id}! Current: {current_value}, Target: {target_value}")
+            # Mark as resolving - frontend will call resolve endpoint
+            try:
+                cursor.execute('''
+                    UPDATE predictions SET status = 'resolving' WHERE prediction_id = ?
+                ''', (prediction_id,))
+                conn.commit()
+                status = 'resolving'
+            except Exception as e:
+                logger.error(f"Error marking as resolving: {e}")
+        
         # Calculate odds
         yes_pool = row[8] or 0.01  # Prevent division by zero
         no_pool = row[9] or 0.01
@@ -2424,7 +2439,7 @@ def get_prediction(prediction_id):
                 "end_time": row[7],
                 "yes_pool": yes_pool,
                 "no_pool": no_pool,
-                "status": row[10],
+                "status": status,
                 "outcome": row[11],
                 "initial_value": row[12],
                 "final_value": row[13],
@@ -2550,7 +2565,7 @@ def resolve_prediction(prediction_id):
         
         content_url, platform, metric_type, target_value, yes_pool, no_pool, status = row
         
-        if status != 'active':
+        if status not in ['active', 'resolving']:
             return jsonify({"success": False, "error": "Prediction already resolved"}), 400
         
         # Get final metric value

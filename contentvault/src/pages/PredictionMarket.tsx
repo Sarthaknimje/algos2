@@ -25,7 +25,9 @@ import {
   Play,
   Calendar,
   Activity,
-  Globe
+  Globe,
+  Coins,
+  ArrowRight
 } from 'lucide-react'
 import { useWallet } from '../contexts/WalletContext'
 import { sendAlgoPaymentWithPera } from '../services/peraWalletService'
@@ -76,25 +78,67 @@ const PredictionMarket: React.FC = () => {
     timeframe_hours: '24'
   })
   const [creating, setCreating] = useState(false)
+  const [userTokens, setUserTokens] = useState<any[]>([])
+  const [showTokenSelectModal, setShowTokenSelectModal] = useState(false)
+  const [createFromToken, setCreateFromToken] = useState(false)
 
   useEffect(() => {
     fetchPredictions()
-    const interval = setInterval(fetchPredictions, 30000) // Refresh every 30s
+    if (isConnected && address) {
+      fetchUserTokens()
+    }
+    // Refresh every 10 seconds for real-time updates
+    const interval = setInterval(fetchPredictions, 10000)
     return () => clearInterval(interval)
-  }, [])
+  }, [isConnected, address])
+
+  const fetchUserTokens = async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/user-tokens/${address}`)
+      const data = await response.json()
+      if (data.success) {
+        setUserTokens(data.tokens || [])
+      }
+    } catch (error) {
+      console.error('Error fetching user tokens:', error)
+    }
+  }
 
   const fetchPredictions = async () => {
     try {
       const response = await fetch(`${BACKEND_URL}/api/predictions?status=active`)
       const data = await response.json()
       if (data.success) {
-        // Fetch detailed data for each prediction
+        // Fetch detailed data for each prediction with real-time metrics
         const detailed = await Promise.all(
           data.predictions.map(async (p: Prediction) => {
             try {
               const detailRes = await fetch(`${BACKEND_URL}/api/predictions/${p.prediction_id}`)
               const detailData = await detailRes.json()
-              return detailData.success ? detailData.prediction : p
+              if (detailData.success) {
+                const pred = detailData.prediction
+                
+                // Check if target is met - auto-resolve
+                if (pred.current_value >= pred.target_value && (pred.status === 'active' || pred.status === 'resolving')) {
+                  // Auto-resolve if target reached
+                  try {
+                    const resolveRes = await fetch(`${BACKEND_URL}/api/predictions/${p.prediction_id}/resolve`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' }
+                    })
+                    const resolveData = await resolveRes.json()
+                    if (resolveData.success) {
+                      // Refresh after resolution to show outcome
+                      setTimeout(fetchPredictions, 2000)
+                    }
+                  } catch (e) {
+                    console.error('Auto-resolve error:', e)
+                  }
+                }
+                
+                return pred
+              }
+              return p
             } catch {
               return p
             }
@@ -321,23 +365,37 @@ const PredictionMarket: React.FC = () => {
           </div>
         </motion.div>
 
-        {/* Create Button */}
+        {/* Create Buttons */}
         {isConnected && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 }}
-            className="mb-8"
+            className="mb-8 flex flex-wrap justify-center gap-4"
           >
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={() => setShowCreateModal(true)}
-              className="px-6 py-3 bg-gradient-to-r from-violet-600 to-fuchsia-600 rounded-xl text-white font-semibold flex items-center gap-2 mx-auto"
+              onClick={() => {
+                setCreateFromToken(false)
+                setShowCreateModal(true)
+              }}
+              className="px-6 py-3 bg-gradient-to-r from-violet-600 to-fuchsia-600 rounded-xl text-white font-semibold flex items-center gap-2"
             >
               <Plus className="w-5 h-5" />
-              <span>Create Prediction Market</span>
+              <span>Create from URL</span>
             </motion.button>
+            {userTokens.length > 0 && (
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setShowTokenSelectModal(true)}
+                className="px-6 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-xl text-white font-semibold flex items-center gap-2"
+              >
+                <Coins className="w-5 h-5" />
+                <span>Create from My Tokens ({userTokens.length})</span>
+              </motion.button>
+            )}
           </motion.div>
         )}
 
@@ -370,22 +428,78 @@ const PredictionMarket: React.FC = () => {
                 </div>
               </div>
 
-              {/* Prediction Question */}
-              <div className="mb-4 p-4 bg-white/5 rounded-xl">
-                <p className="text-white font-semibold mb-2">
-                  Will this content reach{' '}
-                  <span className="text-violet-400">{formatNumber(prediction.target_value)}</span>{' '}
+              {/* Real-Time Metrics Display */}
+              <div className="mb-4 p-4 bg-gradient-to-r from-violet-500/10 to-fuchsia-500/10 rounded-xl border border-violet-500/20">
+                <p className="text-white font-semibold mb-4 text-center">
+                  Will reach{' '}
+                  <span className="text-violet-400 font-bold">{formatNumber(prediction.target_value)}</span>{' '}
                   {prediction.metric_type} in{' '}
-                  <span className="text-fuchsia-400">{prediction.timeframe_hours}h</span>?
+                  <span className="text-fuchsia-400 font-bold">{prediction.timeframe_hours}h</span>?
                 </p>
-                <div className="flex items-center gap-4 text-sm text-gray-400">
-                  <div className="flex items-center gap-1">
+                
+                {/* Current Metric - Large Display */}
+                <div className="text-center mb-4">
+                  <div className="flex items-center justify-center gap-2 mb-2">
                     {getMetricIcon(prediction.metric_type)}
-                    <span>Current: {formatNumber(prediction.current_value || prediction.initial_value)}</span>
+                    <span className="text-gray-400 text-sm">Current {prediction.metric_type}</span>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <Target className="w-4 h-4" />
-                    <span>Target: {formatNumber(prediction.target_value)}</span>
+                  <div className="text-4xl font-bold text-white mb-1">
+                    {formatNumber(prediction.current_value || prediction.initial_value)}
+                  </div>
+                  <div className="text-sm text-gray-400">
+                    Target: <span className="text-violet-400 font-semibold">{formatNumber(prediction.target_value)}</span>
+                  </div>
+                </div>
+
+                {/* Progress Bar */}
+                <div className="mb-3">
+                  <div className="flex justify-between text-xs text-gray-400 mb-1">
+                    <span>Progress</span>
+                    <span>
+                      {Math.min(100, ((prediction.current_value || prediction.initial_value) / prediction.target_value) * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className="w-full h-3 bg-white/10 rounded-full overflow-hidden">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ 
+                        width: `${Math.min(100, ((prediction.current_value || prediction.initial_value) / prediction.target_value) * 100)}%` 
+                      }}
+                      transition={{ duration: 0.5 }}
+                      className={`h-full rounded-full ${
+                        (prediction.current_value || prediction.initial_value) >= prediction.target_value
+                          ? 'bg-gradient-to-r from-green-500 to-emerald-500'
+                          : 'bg-gradient-to-r from-violet-500 to-fuchsia-500'
+                      }`}
+                    />
+                  </div>
+                </div>
+
+                {/* Completion Status */}
+                {(prediction.current_value || prediction.initial_value) >= prediction.target_value && prediction.status === 'active' && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="p-3 bg-green-500/20 border border-green-500/50 rounded-lg mb-2"
+                  >
+                    <div className="flex items-center gap-2 justify-center">
+                      <CheckCircle className="w-5 h-5 text-green-400" />
+                      <span className="text-green-400 font-semibold">Target Reached! Resolving...</span>
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* Metric Change */}
+                <div className="flex items-center justify-center gap-4 text-xs">
+                  <div className="flex items-center gap-1 text-gray-400">
+                    <span>Started:</span>
+                    <span className="text-white">{formatNumber(prediction.initial_value)}</span>
+                  </div>
+                  <div className="flex items-center gap-1 text-violet-400">
+                    <TrendingUp className="w-3 h-3" />
+                    <span>
+                      +{formatNumber((prediction.current_value || prediction.initial_value) - prediction.initial_value)}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -512,6 +626,89 @@ const PredictionMarket: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Token Selection Modal */}
+      <AnimatePresence>
+        {showTokenSelectModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setShowTokenSelectModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-[#1a1a2e] rounded-2xl p-6 max-w-2xl w-full border border-white/10 max-h-[80vh] overflow-y-auto"
+            >
+              <h2 className="text-2xl font-bold text-white mb-6">Select Token to Create Prediction</h2>
+              
+              {userTokens.length === 0 ? (
+                <div className="text-center py-12">
+                  <Coins className="w-16 h-16 text-gray-500 mx-auto mb-4" />
+                  <p className="text-gray-400">You haven't created any tokens yet.</p>
+                  <p className="text-gray-500 text-sm mt-2">Tokenize content first to create predictions.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-4">
+                  {userTokens.map((token) => (
+                    <motion.button
+                      key={token.asa_id}
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={() => {
+                        setCreateForm({
+                          content_url: token.content_url || '',
+                          platform: (token.platform || 'youtube') as any,
+                          metric_type: 'likes' as any,
+                          target_value: '',
+                          timeframe_hours: '24'
+                        })
+                        setShowTokenSelectModal(false)
+                        setShowCreateModal(true)
+                        setCreateFromToken(true)
+                      }}
+                      className="p-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-left transition-all"
+                    >
+                      <div className="flex items-center gap-4">
+                        {token.content_thumbnail && (
+                          <img 
+                            src={token.content_thumbnail} 
+                            alt={token.token_name}
+                            className="w-16 h-16 rounded-lg object-cover"
+                          />
+                        )}
+                        <div className="flex-1">
+                          <h3 className="text-white font-semibold mb-1">{token.token_name}</h3>
+                          <p className="text-gray-400 text-sm">${token.token_symbol}</p>
+                          <p className="text-gray-500 text-xs mt-1 capitalize">{token.platform || 'youtube'}</p>
+                        </div>
+                        <div className="text-violet-400">
+                          <ArrowRight className="w-5 h-5" />
+                        </div>
+                      </div>
+                    </motion.button>
+                  ))}
+                </div>
+              )}
+              
+              <div className="mt-6">
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => setShowTokenSelectModal(false)}
+                  className="w-full px-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white font-semibold"
+                >
+                  Cancel
+                </motion.button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Create Modal */}
       <AnimatePresence>

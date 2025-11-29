@@ -55,6 +55,11 @@ const formatPct = (value: number) => `${value.toFixed(2)}%`
 const CopyTradingDashboard: React.FC = () => {
   const { address, isConnected } = useWallet()
   const [selectedTrader, setSelectedTrader] = useState<string | null>(null)
+  const [isCopyModalOpen, setIsCopyModalOpen] = useState(false)
+  const [copyAllocation, setCopyAllocation] = useState(10)
+  const [copyMaxTrade, setCopyMaxTrade] = useState(5)
+  const [copyType, setCopyType] = useState<'proportional' | 'fixed'>('proportional')
+  const [copyRisk, setCopyRisk] = useState<'conservative' | 'balanced' | 'aggressive'>('balanced')
 
   const { data: leaderboardData, isLoading: isLeaderboardLoading } = useQuery({
     queryKey: ['copy-trading', 'leaderboard'],
@@ -98,6 +103,50 @@ const CopyTradingDashboard: React.FC = () => {
     if (!leaderboardData || !effectiveTrader) return null
     return leaderboardData.find(t => t.trader_address === effectiveTrader) || null
   }, [leaderboardData, effectiveTrader])
+
+  const queryClient = useQueryClient()
+
+  const { data: myProfiles } = useQuery({
+    queryKey: ['copy-trading', 'profiles', address],
+    enabled: isConnected && !!address,
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE_URL}/api/copy-trading/profiles?follower_address=${address}`)
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error || 'Failed to load copy profiles')
+      return json.profiles || []
+    }
+  })
+
+  const activeProfilesForTrader = useMemo(() => {
+    if (!myProfiles || !effectiveTrader) return []
+    return myProfiles.filter((p: any) => p.leader_address === effectiveTrader && p.status === 'active')
+  }, [myProfiles, effectiveTrader])
+
+  const totalAllocated = useMemo(() => {
+    if (!myProfiles) return 0
+    return myProfiles.reduce((sum: number, p: any) => sum + (p.allocation_percent || 0), 0)
+  }, [myProfiles])
+
+  const createProfile = async () => {
+    if (!address || !effectiveTrader) return
+    const body = {
+      leader_address: effectiveTrader,
+      follower_address: address,
+      allocation_percent: copyAllocation,
+      max_single_trade_algo: copyMaxTrade,
+      copy_type: copyType,
+      risk_level: copyRisk
+    }
+    const res = await fetch(`${API_BASE_URL}/api/copy-trading/profiles`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+    const json = await res.json()
+    if (!json.success) throw new Error(json.error || 'Failed to create copy profile')
+    await queryClient.invalidateQueries({ queryKey: ['copy-trading', 'profiles', address] })
+    setIsCopyModalOpen(false)
+  }
 
   return (
     <div className="min-h-screen bg-[#05030b] relative">
@@ -144,14 +193,21 @@ const CopyTradingDashboard: React.FC = () => {
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-gray-400">Active Copy Profiles</span>
-                  <span className="text-violet-200 font-semibold">0</span>
+                  <span className="text-violet-200 font-semibold">
+                    {myProfiles ? myProfiles.length : 0}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-gray-400">Total Allocated</span>
-                  <span className="text-violet-200 font-semibold">0.00 ALGO</span>
+                  <span className="text-violet-200 font-semibold">
+                    {totalAllocated.toFixed(1)}% of portfolio
+                  </span>
                 </div>
               </div>
               <button
+                type="button"
+                disabled={!isConnected}
+                onClick={() => setIsCopyModalOpen(true)}
                 className="mt-4 w-full flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white text-sm font-semibold py-2.5 hover:from-violet-400 hover:to-fuchsia-400 transition-colors"
               >
                 <Shield className="w-4 h-4" />
@@ -264,18 +320,27 @@ const CopyTradingDashboard: React.FC = () => {
               <div className="space-y-3 text-xs">
                 <div className="flex items-center justify-between">
                   <span className="text-gray-400">Allocation</span>
-                  <span className="text-violet-200 font-semibold">10% of portfolio</span>
+                  <span className="text-violet-200 font-semibold">
+                    {copyAllocation.toFixed(1)}% of portfolio
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-gray-400">Max Single Trade</span>
-                  <span className="text-violet-200 font-semibold">5.00 ALGO</span>
+                  <span className="text-violet-200 font-semibold">
+                    {copyMaxTrade.toFixed(2)} ALGO
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-gray-400">Copy Type</span>
-                  <span className="text-violet-200 font-semibold">Proportional</span>
+                  <span className="text-violet-200 font-semibold">
+                    {copyType === 'proportional' ? 'Proportional' : 'Fixed size'}
+                  </span>
                 </div>
               </div>
               <button
+                type="button"
+                disabled={!isConnected || !effectiveTrader}
+                onClick={() => setIsCopyModalOpen(true)}
                 className="mt-4 w-full flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white text-sm font-semibold py-2.5 hover:from-violet-400 hover:to-fuchsia-400 transition-colors"
               >
                 <Copy className="w-4 h-4" />
@@ -314,6 +379,148 @@ const CopyTradingDashboard: React.FC = () => {
             </div>
           </div>
         </section>
+
+        {/* Copy settings modal */}
+        {isCopyModalOpen && (
+          <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              className="w-full max-w-lg rounded-3xl bg-gradient-to-br from-slate-900 via-slate-950 to-slate-950 border border-violet-500/40 p-6 shadow-2xl"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-white">Start Copy Trading</h2>
+                <button
+                  type="button"
+                  className="text-gray-400 hover:text-white text-sm"
+                  onClick={() => setIsCopyModalOpen(false)}
+                >
+                  Close
+                </button>
+              </div>
+              {!isConnected || !effectiveTrader ? (
+                <p className="text-xs text-gray-400">
+                  Connect your wallet and select a trader from the leaderboard to configure copy trading.
+                </p>
+              ) : (
+                <>
+                  <p className="text-xs text-gray-400 mb-4">
+                    You are about to follow trades of:
+                    <br />
+                    <span className="font-mono text-violet-200 text-[11px]">
+                      {effectiveTrader}
+                    </span>
+                  </p>
+                  <div className="space-y-4 text-xs">
+                    <div>
+                      <label className="block text-gray-300 mb-1">Allocation (% of portfolio)</label>
+                      <input
+                        type="range"
+                        min={1}
+                        max={50}
+                        value={copyAllocation}
+                        onChange={(e) => setCopyAllocation(Number(e.target.value))}
+                        className="w-full"
+                      />
+                      <p className="text-gray-400 mt-1">
+                        {copyAllocation.toFixed(1)}% of your portfolio will be used for copy trades.
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-gray-300 mb-1">Max Single Trade (ALGO)</label>
+                      <input
+                        type="number"
+                        min={0.1}
+                        step={0.1}
+                        value={copyMaxTrade}
+                        onChange={(e) => setCopyMaxTrade(Number(e.target.value))}
+                        className="w-full rounded-xl bg-black/40 border border-white/10 px-3 py-2 text-gray-100 text-xs focus:outline-none focus:border-violet-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-gray-300 mb-1">Copy Type</label>
+                      <div className="flex gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setCopyType('proportional')}
+                          className={`px-3 py-1.5 rounded-full border text-[11px] ${
+                            copyType === 'proportional'
+                              ? 'border-violet-400 bg-violet-500/10 text-violet-200'
+                              : 'border-white/10 text-gray-300'
+                          }`}
+                        >
+                          Proportional
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCopyType('fixed')}
+                          className={`px-3 py-1.5 rounded-full border text-[11px] ${
+                            copyType === 'fixed'
+                              ? 'border-violet-400 bg-violet-500/10 text-violet-200'
+                              : 'border-white/10 text-gray-300'
+                          }`}
+                        >
+                          Fixed Size
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-gray-300 mb-1">Risk Level</label>
+                      <div className="flex gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setCopyRisk('conservative')}
+                          className={`px-3 py-1.5 rounded-full border text-[11px] ${
+                            copyRisk === 'conservative'
+                              ? 'border-emerald-400 bg-emerald-500/10 text-emerald-200'
+                              : 'border-white/10 text-gray-300'
+                          }`}
+                        >
+                          Conservative
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCopyRisk('balanced')}
+                          className={`px-3 py-1.5 rounded-full border text-[11px] ${
+                            copyRisk === 'balanced'
+                              ? 'border-emerald-400 bg-emerald-500/10 text-emerald-200'
+                              : 'border-white/10 text-gray-300'
+                          }`}
+                        >
+                          Balanced
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCopyRisk('aggressive')}
+                          className={`px-3 py-1.5 rounded-full border text-[11px] ${
+                            copyRisk === 'aggressive'
+                              ? 'border-rose-400 bg-rose-500/10 text-rose-200'
+                              : 'border-white/10 text-gray-300'
+                          }`}
+                        >
+                          Aggressive
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-5 flex items-center justify-between text-[11px] text-gray-400">
+                    <span>
+                      Copy profile will be stored on backend. Real trades are still executed only when you confirm via Pera Wallet.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={createProfile}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white font-semibold"
+                    >
+                      <Copy className="w-3 h-3" />
+                      <span>Start Copying</span>
+                    </button>
+                  </div>
+                </>
+              )}
+            </motion.div>
+          </div>
+        )}
 
         {/* Bottom: Top Traders & Strategies */}
         <section className="grid lg:grid-cols-3 gap-8">

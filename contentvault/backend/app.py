@@ -405,12 +405,30 @@ def init_db():
             allocation_percent REAL NOT NULL,
             max_single_trade_algo REAL NOT NULL,
             copy_type TEXT DEFAULT 'proportional',
+            risk_level TEXT DEFAULT 'balanced',
             status TEXT DEFAULT 'active',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_copy_profiles_leader ON copy_profiles (leader_address)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_copy_profiles_follower ON copy_profiles (follower_address)')
+
+    # Create bot strategies table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS bot_strategies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            owner_address TEXT NOT NULL,
+            label TEXT NOT NULL,
+            asa_id INTEGER,
+            token_symbol TEXT,
+            metric_type TEXT NOT NULL,
+            condition TEXT NOT NULL,
+            action TEXT NOT NULL,
+            status TEXT DEFAULT 'active',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_bot_strategies_owner ON bot_strategies (owner_address)')
 
     conn.close()
     
@@ -1630,6 +1648,56 @@ def copy_trading_trader_trades(address):
         "count": len(trades)
     })
 
+@app.route('/api/portfolio/<address>', methods=['GET'])
+@handle_errors
+def get_portfolio(address):
+    """
+    Aggregate real holdings per token for a wallet based on trades.
+    This is a simple on-chain-like portfolio view using our trades ledger.
+    """
+    conn = sqlite3.connect('creatorvault.db')
+    cursor = conn.cursor()
+
+    # Sum net token amounts per ASA (buys - sells)
+    cursor.execute('''
+        SELECT 
+            t.asa_id,
+            tk.token_name,
+            tk.token_symbol,
+            tk.current_price,
+            SUM(CASE WHEN t.trade_type = 'buy' THEN t.amount ELSE -t.amount END) as net_amount
+        FROM trades t
+        LEFT JOIN tokens tk ON t.asa_id = tk.asa_id
+        WHERE t.trader_address = ?
+        GROUP BY t.asa_id
+        HAVING net_amount > 0
+    ''', (address,))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    holdings = []
+    total_value = 0
+    for row in rows:
+        asa_id, token_name, token_symbol, current_price, net_amount = row
+        current_price = current_price or 0
+        value = (net_amount or 0) * current_price
+        total_value += value
+        holdings.append({
+            "asa_id": asa_id,
+            "token_name": token_name,
+            "token_symbol": token_symbol,
+            "current_price": current_price,
+            "balance": net_amount or 0,
+            "value": value
+        })
+
+    return jsonify({
+        "success": True,
+        "holdings": holdings,
+        "total_value": total_value
+    })
+
 @app.route('/api/copy-trading/profiles', methods=['POST', 'GET'])
 @handle_errors
 def copy_trading_profiles():
@@ -1648,15 +1716,16 @@ def copy_trading_profiles():
         allocation = float(data.get('allocation_percent', 0))
         max_single_trade_algo = float(data.get('max_single_trade_algo', 0))
         copy_type = data.get('copy_type', 'proportional')
+        risk_level = data.get('risk_level', 'balanced')
 
         if not leader or not follower:
             return jsonify({"success": False, "error": "leader_address and follower_address are required"}), 400
 
         cursor.execute('''
             INSERT INTO copy_profiles
-            (leader_address, follower_address, allocation_percent, max_single_trade_algo, copy_type, status)
-            VALUES (?, ?, ?, ?, ?, 'active')
-        ''', (leader, follower, allocation, max_single_trade_algo, copy_type))
+            (leader_address, follower_address, allocation_percent, max_single_trade_algo, copy_type, risk_level, status)
+            VALUES (?, ?, ?, ?, ?, ?, 'active')
+        ''', (leader, follower, allocation, max_single_trade_algo, copy_type, risk_level))
 
         conn.commit()
         conn.close()
@@ -1667,7 +1736,7 @@ def copy_trading_profiles():
     follower = request.args.get('follower_address')
     leader = request.args.get('leader_address')
 
-    query = 'SELECT leader_address, follower_address, allocation_percent, max_single_trade_algo, copy_type, status, created_at FROM copy_profiles WHERE 1=1'
+    query = 'SELECT leader_address, follower_address, allocation_percent, max_single_trade_algo, copy_type, risk_level, status, created_at FROM copy_profiles WHERE 1=1'
     params = []
     if follower:
         query += ' AND follower_address = ?'
@@ -1688,13 +1757,79 @@ def copy_trading_profiles():
             "allocation_percent": row[2],
             "max_single_trade_algo": row[3],
             "copy_type": row[4],
-            "status": row[5],
-            "created_at": row[6]
+            "risk_level": row[5],
+            "status": row[6],
+            "created_at": row[7]
         })
 
     return jsonify({
         "success": True,
         "profiles": profiles
+    })
+
+@app.route('/api/bot-strategies', methods=['GET', 'POST'])
+@handle_errors
+def bot_strategies():
+    """
+    Store and list engagement-based bot strategies.
+    Execution is not automatic; these are configs only.
+    """
+    conn = sqlite3.connect('creatorvault.db')
+    cursor = conn.cursor()
+
+    if request.method == 'POST':
+        data = request.json or {}
+        owner_address = data.get('owner_address')
+        label = data.get('label')
+        token_symbol = data.get('token_symbol')
+        metric_type = data.get('metric_type', 'likes')
+        condition = data.get('condition', '')
+        action = data.get('action', '')
+
+        if not owner_address or not label or not condition or not action:
+            return jsonify({"success": False, "error": "owner_address, label, condition and action are required"}), 400
+
+        cursor.execute('''
+            INSERT INTO bot_strategies
+            (owner_address, label, token_symbol, metric_type, condition, action, status)
+            VALUES (?, ?, ?, ?, ?, ?, 'active')
+        ''', (owner_address, label, token_symbol, metric_type, condition, action))
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({"success": True})
+
+    # GET
+    owner_address = request.args.get('owner_address')
+    cursor.execute('''
+        SELECT id, owner_address, label, asa_id, token_symbol, metric_type, condition, action, status, created_at
+        FROM bot_strategies
+        WHERE (? IS NULL OR owner_address = ?)
+        ORDER BY created_at DESC
+    ''', (owner_address, owner_address))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    strategies = []
+    for row in rows:
+        strategies.append({
+            "id": row[0],
+            "owner_address": row[1],
+            "label": row[2],
+            "asa_id": row[3],
+            "token_symbol": row[4],
+            "metric_type": row[5],
+            "condition": row[6],
+            "action": row[7],
+            "status": row[8],
+            "created_at": row[9]
+        })
+
+    return jsonify({
+        "success": True,
+        "strategies": strategies
     })
 
 @app.route('/api/token/<int:asa_id>', methods=['GET'])

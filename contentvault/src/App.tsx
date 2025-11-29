@@ -14,6 +14,7 @@ import MultiPlatformTokenization from './pages/MultiPlatformTokenization'
 import YouTubeVideos from './pages/YouTubeVideos'
 import PredictionMarket from './pages/PredictionMarket'
 import CopyTradingDashboard from './pages/CopyTradingDashboard'
+import BotStrategies from './pages/BotStrategies'
 
 function App() {
   return (
@@ -25,6 +26,7 @@ function App() {
               <Route index element={<Home />} />
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="copy-trading" element={<CopyTradingDashboard />} />
+              <Route path="bot-strategies" element={<BotStrategies />} />
               <Route path="tokenize" element={<MultiPlatformTokenization />} />
               <Route path="profile" element={<Profile />} />
               <Route path="token/:id" element={<TokenDetails />} />

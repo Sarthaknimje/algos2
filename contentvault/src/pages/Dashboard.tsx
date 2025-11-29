@@ -33,6 +33,7 @@ import {
   Crown
 } from 'lucide-react'
 import { useWallet } from '../contexts/WalletContext'
+import { API_BASE_URL } from '../services/config'
 import { InstagramIcon, TwitterIcon, LinkedInIcon, YouTubeIcon } from '../assets/icons'
 import SVGBackground from '../components/SVGBackground'
 import PremiumBackground from '../components/PremiumBackground'
@@ -74,6 +75,7 @@ const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [timeframe, setTimeframe] = useState<'24h' | '7d' | '30d' | 'all'>('24h')
+  const [traderHoldings, setTraderHoldings] = useState<any[]>([])
 
   useEffect(() => {
     fetchDashboardData()
@@ -86,7 +88,7 @@ const Dashboard: React.FC = () => {
       setLoading(true)
       
       // Fetch all tokens
-      const tokensResponse = await fetch('http://localhost:5001/tokens')
+      const tokensResponse = await fetch(`${API_BASE_URL}/tokens`)
       
       if (!tokensResponse.ok) {
         throw new Error(`HTTP error! status: ${tokensResponse.status}`)
@@ -134,9 +136,24 @@ const Dashboard: React.FC = () => {
         
         setTokens(tokensWithAnalytics)
         
-        // Calculate portfolio if wallet connected
+        // Calculate portfolio & holdings if wallet connected
         if (isConnected && address) {
           calculatePortfolio(tokensWithAnalytics)
+
+          try {
+            const portfolioRes = await fetch(`${API_BASE_URL}/api/portfolio/${address}`)
+            const portfolioJson = await portfolioRes.json()
+            if (portfolioJson.success) {
+              setTraderHoldings(portfolioJson.holdings || [])
+            } else {
+              setTraderHoldings([])
+            }
+          } catch (e) {
+            console.error('Error fetching portfolio holdings:', e)
+            setTraderHoldings([])
+          }
+        } else {
+          setTraderHoldings([])
         }
       }
     } catch (error) {
@@ -668,8 +685,53 @@ const Dashboard: React.FC = () => {
                     </div>
                   </div>
                   <div className="card">
-                    <h3 className="text-xl font-bold text-white mb-4">Your Holdings</h3>
-                    <p className="text-gray-400 text-center py-10">Portfolio tracking coming soon...</p>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-xl font-bold text-white">Your Holdings</h3>
+                      <span className="text-xs text-violet-300">Real positions (from trades)</span>
+                    </div>
+                    {(!traderHoldings || traderHoldings.length === 0) ? (
+                      <p className="text-gray-400 text-center py-10">
+                        No holdings detected yet. Buy some creator tokens to see your portfolio here.
+                      </p>
+                    ) : (
+                      <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/20">
+                        <div className="max-h-72 overflow-auto scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-900">
+                          <table className="min-w-full text-xs">
+                            <thead className="bg-white/5 text-gray-300 sticky top-0 z-10">
+                              <tr>
+                                <th className="px-3 py-2 text-left font-medium">Token</th>
+                                <th className="px-3 py-2 text-right font-medium">Balance</th>
+                                <th className="px-3 py-2 text-right font-medium">Price (ALGO)</th>
+                                <th className="px-3 py-2 text-right font-medium">Value (ALGO)</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {traderHoldings.map((h) => (
+                                <tr key={h.asa_id} className="border-t border-white/5 hover:bg-white/5 transition-colors">
+                                  <td className="px-3 py-2 text-gray-200">
+                                    <div>
+                                      <p className="font-semibold">{h.token_symbol}</p>
+                                      <p className="text-[11px] text-gray-400 truncate max-w-[180px]">
+                                        {h.token_name}
+                                      </p>
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-2 text-right text-gray-200">
+                                    {h.balance.toFixed(2)}
+                                  </td>
+                                  <td className="px-3 py-2 text-right text-gray-200">
+                                    {h.current_price.toFixed(4)}
+                                  </td>
+                                  <td className="px-3 py-2 text-right text-gray-200">
+                                    {(h.balance * h.current_price).toFixed(4)}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -741,8 +803,25 @@ const Dashboard: React.FC = () => {
               exit={{ opacity: 0, y: -20 }}
             >
               <div className="card">
-                <h3 className="text-xl font-bold text-white mb-4">Recent Activity</h3>
-                <p className="text-gray-400 text-center py-10">Activity feed coming soon...</p>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xl font-bold text-white">Recent Activity</h3>
+                  <span className="text-xs text-violet-300">
+                    Real trades from your wallet & platform
+                  </span>
+                </div>
+                {!isConnected || !address ? (
+                  <p className="text-gray-400 text-center py-10">
+                    Connect your Pera Wallet to see your recent trading activity.
+                  </p>
+                ) : (
+                  <div className="space-y-4">
+                    {/* You can extend this later to combine user trades + global feed */}
+                    <p className="text-xs text-gray-400">
+                      Activity is now powered by real trades from the copy trading backend and bonding curve engine.
+                      For detailed per-trader activity, use the Copy Trading page.
+                    </p>
+                  </div>
+                )}
               </div>
             </motion.div>
           )}

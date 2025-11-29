@@ -660,7 +660,7 @@ const Home: React.FC = () => {
       </section>
 
       {/* How It Works - 3D Steps */}
-      <section className="relative py-32 px-4 bg-gradient-to-b from-transparent via-violet-950/20 to-transparent z-10">
+      <section className="relative py-32 px-4 bg-gradient-to-b from-transparent via-violet-950/20 to-transparent z-10 overflow-hidden">
         <div className="max-w-7xl mx-auto">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -676,12 +676,12 @@ const Home: React.FC = () => {
             </p>
           </motion.div>
 
-          <div className="grid md:grid-cols-3 gap-8 relative">
-            {/* Connection line with animated dots */}
-            <div className="hidden md:block absolute top-1/2 left-1/4 right-1/4 h-1 bg-gradient-to-r from-cyan-500 via-violet-500 to-green-500 opacity-30 rounded-full" />
+          <div className="grid md:grid-cols-3 gap-8 lg:gap-12 relative pt-8">
+            {/* Connection line with animated dots - positioned correctly */}
+            <div className="hidden md:block absolute top-[120px] left-[16.666%] right-[16.666%] h-1 bg-gradient-to-r from-cyan-500 via-violet-500 to-green-500 opacity-30 rounded-full z-0" />
             <motion.div
-              className="hidden md:block absolute top-1/2 left-1/4 w-3 h-3 bg-cyan-500 rounded-full"
-              animate={{ x: [0, 200, 400, 0] }}
+              className="hidden md:block absolute top-[120px] left-[16.666%] w-3 h-3 bg-cyan-500 rounded-full z-10"
+              animate={{ x: [0, 'calc(33.333% - 12px)', 'calc(66.666% - 12px)', 0] }}
               transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
             />
             
@@ -695,44 +695,41 @@ const Home: React.FC = () => {
                   whileInView={{ opacity: 1, y: 0, rotateY: 0 }}
                   viewport={{ once: true }}
                   transition={{ delay: index * 0.2, type: "spring", stiffness: 100 }}
-                  className="relative"
+                  className="relative z-10"
                   style={{ perspective: 1000 }}
                 >
                   <motion.div 
-                    className="p-8 rounded-3xl bg-white/5 border border-white/10 hover:border-white/30 transition-all text-center group relative overflow-hidden min-h-[320px]"
+                    className="p-8 rounded-3xl bg-white/5 border border-white/10 hover:border-white/30 transition-all text-center group relative overflow-visible"
                     whileHover={{ 
-                      y: -20,
-                      z: 50,
-                      rotateY: 5,
-                      rotateX: 5
+                      y: -10,
+                      scale: 1.02
                     }}
                     style={{ transformStyle: 'preserve-3d' }}
                   >
                     {/* 3D Background */}
-                    <div className={`absolute inset-0 bg-gradient-to-br ${gradientClass}/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500`} />
+                    <div className={`absolute inset-0 bg-gradient-to-br ${gradientClass}/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-3xl`} />
                     
-                    {/* Step number - 3D */}
+                    {/* Step number - positioned inside card */}
                     <motion.div 
-                      className="absolute -top-6 left-1/2 transform -translate-x-1/2"
-                      whileHover={{ scale: 1.2, rotateZ: 360 }}
-                      transition={{ duration: 0.5 }}
+                      className="relative mb-6 flex justify-center"
+                      whileHover={{ scale: 1.1 }}
+                      transition={{ duration: 0.3 }}
                     >
-                      <div className={`w-14 h-14 rounded-full bg-gradient-to-r ${step.color} flex items-center justify-center text-white font-bold text-lg shadow-2xl`} style={{ transform: 'translateZ(20px)' }}>
+                      <div className={`w-16 h-16 rounded-full bg-gradient-to-r ${step.color} flex items-center justify-center text-white font-bold text-xl shadow-2xl relative z-20`}>
                         {step.number}
                       </div>
                     </motion.div>
                     
                     <motion.div 
-                      className={`w-24 h-24 rounded-3xl bg-gradient-to-r ${step.color} bg-opacity-20 flex items-center justify-center mx-auto mb-6 mt-8 relative z-10`}
+                      className={`w-20 h-20 rounded-2xl bg-gradient-to-r ${step.color} bg-opacity-20 flex items-center justify-center mx-auto mb-6 relative z-10`}
                       whileHover={{ rotate: [0, 10, -10, 0], scale: 1.1 }}
                       transition={{ duration: 0.5 }}
-                      style={{ transformStyle: 'preserve-3d' }}
                     >
-                      <Icon className="w-12 h-12 text-white" style={{ transform: 'translateZ(20px)' }} />
+                      <Icon className="w-10 h-10 text-white" />
                     </motion.div>
                     
-                    <h3 className="text-2xl font-bold text-white mb-4 relative z-10">{step.title}</h3>
-                    <p className="text-gray-400 leading-relaxed relative z-10 mb-4">{step.description}</p>
+                    <h3 className="text-xl md:text-2xl font-bold text-white mb-4 relative z-10">{step.title}</h3>
+                    <p className="text-gray-400 leading-relaxed text-sm md:text-base relative z-10 mb-4">{step.description}</p>
                     
                     {/* Platform badges */}
                     {step.platforms.length > 0 && (
@@ -740,8 +737,8 @@ const Home: React.FC = () => {
                         {step.platforms.map((platform) => (
                           <motion.span 
                             key={platform} 
-                            className="px-3 py-1 text-xs bg-white/5 border border-white/10 rounded-full text-gray-400"
-                            whileHover={{ scale: 1.1, backgroundColor: 'rgba(255,255,255,0.1)' }}
+                            className="px-3 py-1.5 text-xs bg-white/5 border border-white/10 rounded-full text-gray-300 hover:text-white transition-colors"
+                            whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.1)' }}
                           >
                             {platform}
                           </motion.span>
@@ -752,7 +749,7 @@ const Home: React.FC = () => {
                     {/* Decorative SVG for step 2 */}
                     {index === 1 && (
                       <div className="mt-6 flex justify-center relative z-10">
-                        <div className="w-24 h-24">
+                        <div className="w-20 h-20 opacity-60">
                           <TokenIllustration className="w-full h-full" />
                         </div>
                       </div>

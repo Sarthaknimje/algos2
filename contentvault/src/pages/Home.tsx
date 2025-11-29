@@ -106,7 +106,7 @@ const Home: React.FC = () => {
       title: 'Connect Your Platform',
       description: 'Connect your YouTube, Instagram, Twitter, or LinkedIn account. Verify ownership through secure OAuth authentication.',
       icon: Shield,
-      color: 'from-cyan-500 to-blue-600',
+      color: 'from-cyan-400 via-sky-400 to-blue-500',
       platforms: ['YouTube', 'Instagram', 'Twitter', 'LinkedIn'],
       platformIcons: [YouTubeIcon, InstagramIcon, TwitterIcon, LinkedInIcon]
     },
@@ -115,7 +115,7 @@ const Home: React.FC = () => {
       title: 'Tokenize Your Content',
       description: 'Turn your videos and posts into tradeable tokens. Set supply, launch on Algorand blockchain with bonding curve pricing.',
       icon: Coins,
-      color: 'from-violet-500 to-purple-600',
+      color: 'from-violet-400 via-fuchsia-400 to-purple-500',
       platforms: [],
       platformIcons: []
     },
@@ -124,7 +124,7 @@ const Home: React.FC = () => {
       title: 'Earn & Grow',
       description: 'Earn 5% from every trade. Create prediction markets. Watch your creator economy grow with real value and engagement.',
       icon: TrendingUp,
-      color: 'from-emerald-500 to-green-600',
+      color: 'from-emerald-400 via-lime-400 to-green-500',
       platforms: [],
       platformIcons: []
     }

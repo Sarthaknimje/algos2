@@ -395,7 +395,23 @@ def init_db():
         conn.commit()
     except Exception as e:
         logger.warning(f"Migration warning: {e}")
-    
+
+    # Create copy trading profiles table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS copy_profiles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            leader_address TEXT NOT NULL,
+            follower_address TEXT NOT NULL,
+            allocation_percent REAL NOT NULL,
+            max_single_trade_algo REAL NOT NULL,
+            copy_type TEXT DEFAULT 'proportional',
+            status TEXT DEFAULT 'active',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_copy_profiles_leader ON copy_profiles (leader_address)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_copy_profiles_follower ON copy_profiles (follower_address)')
+
     conn.close()
     
     # Load YouTube session from database if exists
@@ -1449,6 +1465,237 @@ def get_trades(asa_id):
     except Exception as e:
         logger.error(f"Error fetching trades: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/copy-trading/leaderboard', methods=['GET'])
+@handle_errors
+def copy_trading_leaderboard():
+    """
+    Aggregate real trading stats per trader_address from trades table.
+    Returns top traders by realized volume with basic performance metrics.
+    """
+    conn = sqlite3.connect('creatorvault.db')
+    cursor = conn.cursor()
+
+    timeframe = request.args.get('timeframe', '30d')
+    limit = int(request.args.get('limit', 20))
+
+    # Time filter
+    if timeframe == '7d':
+        time_filter = "datetime('now', '-7 days')"
+    elif timeframe == '90d':
+        time_filter = "datetime('now', '-90 days')"
+    elif timeframe == 'all':
+        time_filter = "datetime('1970-01-01')"
+    else:
+        time_filter = "datetime('now', '-30 days')"
+
+    cursor.execute(f'''
+        SELECT 
+            trader_address,
+            COUNT(*) as trade_count,
+            SUM(CASE WHEN trade_type = 'buy' THEN total_value ELSE 0 END) as buy_volume,
+            SUM(CASE WHEN trade_type = 'sell' THEN total_value ELSE 0 END) as sell_volume,
+            COUNT(DISTINCT asa_id) as distinct_tokens,
+            MIN(created_at) as first_trade_at,
+            MAX(created_at) as last_trade_at
+        FROM trades
+        WHERE created_at >= {time_filter}
+        GROUP BY trader_address
+        HAVING trade_count > 0
+        ORDER BY sell_volume DESC
+        LIMIT ?
+    ''', (limit,))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    traders = []
+    for row in rows:
+        trader_address, trade_count, buy_volume, sell_volume, distinct_tokens, first_trade_at, last_trade_at = row
+        buy_volume = buy_volume or 0
+        sell_volume = sell_volume or 0
+        net_pnl = sell_volume - buy_volume
+        roi_pct = (net_pnl / buy_volume * 100) if buy_volume > 0 else 0
+
+        traders.append({
+            "trader_address": trader_address,
+            "trade_count": trade_count,
+            "buy_volume": buy_volume,
+            "sell_volume": sell_volume,
+            "net_pnl": net_pnl,
+            "roi_pct": roi_pct,
+            "distinct_tokens": distinct_tokens,
+            "first_trade_at": first_trade_at,
+            "last_trade_at": last_trade_at
+        })
+
+    return jsonify({
+        "success": True,
+        "traders": traders,
+        "count": len(traders)
+    })
+
+@app.route('/api/copy-trading/trader/<address>/pnl', methods=['GET'])
+@handle_errors
+def copy_trading_trader_pnl(address):
+    """
+    Real P&L over time for a trader based on trades table.
+    P&L per day = sells_value - buys_value for that day.
+    """
+    timeframe = request.args.get('timeframe', '30d')
+
+    if timeframe == '7d':
+        time_filter = "datetime('now', '-7 days')"
+    elif timeframe == '90d':
+        time_filter = "datetime('now', '-90 days')"
+    elif timeframe == 'all':
+        time_filter = "datetime('1970-01-01')"
+    else:
+        time_filter = "datetime('now', '-30 days')"
+
+    conn = sqlite3.connect('creatorvault.db')
+    cursor = conn.cursor()
+
+    cursor.execute(f'''
+        SELECT 
+            DATE(created_at) as day,
+            SUM(CASE WHEN trade_type = 'sell' THEN total_value ELSE 0 END) -
+            SUM(CASE WHEN trade_type = 'buy' THEN total_value ELSE 0 END) as pnl
+        FROM trades
+        WHERE trader_address = ? AND created_at >= {time_filter}
+        GROUP BY DATE(created_at)
+        ORDER BY DATE(created_at)
+    ''', (address,))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    points = [{"day": day, "pnl": pnl or 0} for (day, pnl) in rows]
+
+    return jsonify({
+        "success": True,
+        "points": points
+    })
+
+@app.route('/api/copy-trading/trader/<address>/trades', methods=['GET'])
+@handle_errors
+def copy_trading_trader_trades(address):
+    """
+    Detailed trade history for a trader with token metadata.
+    Real data from trades + tokens tables.
+    """
+    limit = int(request.args.get('limit', 100))
+
+    conn = sqlite3.connect('creatorvault.db')
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT 
+            t.trade_type,
+            t.amount,
+            t.price,
+            t.total_value,
+            t.created_at,
+            t.transaction_id,
+            t.asa_id,
+            tk.token_name,
+            tk.token_symbol
+        FROM trades t
+        LEFT JOIN tokens tk ON t.asa_id = tk.asa_id
+        WHERE t.trader_address = ?
+        ORDER BY t.created_at DESC
+        LIMIT ?
+    ''', (address, limit))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    trades = []
+    for row in rows:
+        trades.append({
+            "trade_type": row[0],
+            "amount": row[1],
+            "price": row[2],
+            "total_value": row[3],
+            "created_at": row[4],
+            "transaction_id": row[5],
+            "asa_id": row[6],
+            "token_name": row[7],
+            "token_symbol": row[8],
+        })
+
+    return jsonify({
+        "success": True,
+        "trades": trades,
+        "count": len(trades)
+    })
+
+@app.route('/api/copy-trading/profiles', methods=['POST', 'GET'])
+@handle_errors
+def copy_trading_profiles():
+    """
+    Manage copy trading profiles (real configs, no auto-execution yet).
+    POST: create/update profile
+    GET: list profiles for follower or leader
+    """
+    conn = sqlite3.connect('creatorvault.db')
+    cursor = conn.cursor()
+
+    if request.method == 'POST':
+        data = request.json or {}
+        leader = data.get('leader_address')
+        follower = data.get('follower_address')
+        allocation = float(data.get('allocation_percent', 0))
+        max_single_trade_algo = float(data.get('max_single_trade_algo', 0))
+        copy_type = data.get('copy_type', 'proportional')
+
+        if not leader or not follower:
+            return jsonify({"success": False, "error": "leader_address and follower_address are required"}), 400
+
+        cursor.execute('''
+            INSERT INTO copy_profiles
+            (leader_address, follower_address, allocation_percent, max_single_trade_algo, copy_type, status)
+            VALUES (?, ?, ?, ?, ?, 'active')
+        ''', (leader, follower, allocation, max_single_trade_algo, copy_type))
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({"success": True})
+
+    # GET
+    follower = request.args.get('follower_address')
+    leader = request.args.get('leader_address')
+
+    query = 'SELECT leader_address, follower_address, allocation_percent, max_single_trade_algo, copy_type, status, created_at FROM copy_profiles WHERE 1=1'
+    params = []
+    if follower:
+        query += ' AND follower_address = ?'
+        params.append(follower)
+    if leader:
+        query += ' AND leader_address = ?'
+        params.append(leader)
+
+    cursor.execute(query, tuple(params))
+    rows = cursor.fetchall()
+    conn.close()
+
+    profiles = []
+    for row in rows:
+        profiles.append({
+            "leader_address": row[0],
+            "follower_address": row[1],
+            "allocation_percent": row[2],
+            "max_single_trade_algo": row[3],
+            "copy_type": row[4],
+            "status": row[5],
+            "created_at": row[6]
+        })
+
+    return jsonify({
+        "success": True,
+        "profiles": profiles
+    })
 
 @app.route('/api/token/<int:asa_id>', methods=['GET'])
 @handle_errors

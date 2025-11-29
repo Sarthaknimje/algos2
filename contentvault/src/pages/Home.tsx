@@ -107,7 +107,8 @@ const Home: React.FC = () => {
       description: 'Connect your YouTube, Instagram, Twitter, or LinkedIn account. Verify ownership through secure OAuth authentication.',
       icon: Shield,
       color: 'from-cyan-500 to-blue-600',
-      platforms: ['YouTube', 'Instagram', 'Twitter', 'LinkedIn']
+      platforms: ['YouTube', 'Instagram', 'Twitter', 'LinkedIn'],
+      platformIcons: [YouTubeIcon, InstagramIcon, TwitterIcon, LinkedInIcon]
     },
     {
       number: '02',
@@ -115,7 +116,8 @@ const Home: React.FC = () => {
       description: 'Turn your videos and posts into tradeable tokens. Set supply, launch on Algorand blockchain with bonding curve pricing.',
       icon: Coins,
       color: 'from-violet-500 to-purple-600',
-      platforms: []
+      platforms: [],
+      platformIcons: []
     },
     {
       number: '03',
@@ -123,7 +125,8 @@ const Home: React.FC = () => {
       description: 'Earn 5% from every trade. Create prediction markets. Watch your creator economy grow with real value and engagement.',
       icon: TrendingUp,
       color: 'from-emerald-500 to-green-600',
-      platforms: []
+      platforms: [],
+      platformIcons: []
     }
   ]
 
@@ -676,14 +679,28 @@ const Home: React.FC = () => {
             </p>
           </motion.div>
 
-          <div className="grid md:grid-cols-3 gap-8 lg:gap-12 relative pt-8">
-            {/* Connection line with animated dots - positioned correctly */}
-            <div className="hidden md:block absolute top-[120px] left-[16.666%] right-[16.666%] h-1 bg-gradient-to-r from-cyan-500 via-violet-500 to-green-500 opacity-30 rounded-full z-0" />
-            <motion.div
-              className="hidden md:block absolute top-[120px] left-[16.666%] w-3 h-3 bg-cyan-500 rounded-full z-10"
-              animate={{ x: [0, 'calc(33.333% - 12px)', 'calc(66.666% - 12px)', 0] }}
-              transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
-            />
+          <div className="grid md:grid-cols-3 gap-6 lg:gap-8 relative">
+            {/* Connection arrows - positioned correctly */}
+            <div className="hidden md:block absolute top-[140px] left-[calc(16.666%+80px)] right-[calc(16.666%+80px)] h-0.5 bg-gradient-to-r from-cyan-500 via-violet-500 to-green-500 opacity-40 rounded-full z-0" />
+            {[0, 1].map((i) => (
+              <motion.div
+                key={i}
+                className="hidden md:block absolute top-[135px]"
+                style={{ left: `calc(${33.333 * (i + 1)}% - 12px)` }}
+                animate={{ 
+                  x: [0, 8, 0],
+                  opacity: [0.6, 1, 0.6]
+                }}
+                transition={{ 
+                  duration: 2, 
+                  repeat: Infinity, 
+                  delay: i * 1,
+                  ease: "easeInOut"
+                }}
+              >
+                <ArrowRight className="w-6 h-6 text-violet-400" />
+              </motion.div>
+            ))}
             
             {steps.map((step, index) => {
               const Icon = step.icon
@@ -691,69 +708,109 @@ const Home: React.FC = () => {
               return (
                 <motion.div
                   key={index}
-                  initial={{ opacity: 0, y: 50, rotateY: -90 }}
-                  whileInView={{ opacity: 1, y: 0, rotateY: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: index * 0.2, type: "spring", stiffness: 100 }}
+                  initial={{ opacity: 0, y: 50 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, margin: "-100px" }}
+                  transition={{ delay: index * 0.15, type: "spring", stiffness: 120 }}
                   className="relative z-10"
-                  style={{ perspective: 1000 }}
                 >
                   <motion.div 
-                    className="p-8 rounded-3xl bg-white/5 border border-white/10 hover:border-white/30 transition-all text-center group relative overflow-visible"
+                    className="h-full p-6 md:p-8 rounded-3xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 hover:border-white/30 transition-all text-center group relative overflow-hidden backdrop-blur-sm"
                     whileHover={{ 
-                      y: -10,
-                      scale: 1.02
+                      y: -8,
+                      scale: 1.02,
+                      borderColor: 'rgba(139, 92, 246, 0.4)'
                     }}
-                    style={{ transformStyle: 'preserve-3d' }}
                   >
-                    {/* 3D Background */}
-                    <div className={`absolute inset-0 bg-gradient-to-br ${gradientClass}/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-3xl`} />
+                    {/* Gradient glow on hover */}
+                    <div className={`absolute inset-0 bg-gradient-to-br ${gradientClass}/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-3xl blur-xl`} />
                     
-                    {/* Step number - positioned inside card */}
+                    {/* Step number badge */}
                     <motion.div 
                       className="relative mb-6 flex justify-center"
-                      whileHover={{ scale: 1.1 }}
+                      whileHover={{ scale: 1.1, rotate: [0, -5, 5, 0] }}
                       transition={{ duration: 0.3 }}
                     >
-                      <div className={`w-16 h-16 rounded-full bg-gradient-to-r ${step.color} flex items-center justify-center text-white font-bold text-xl shadow-2xl relative z-20`}>
-                        {step.number}
+                      <div className={`relative w-14 h-14 md:w-16 md:h-16 rounded-full bg-gradient-to-r ${step.color} flex items-center justify-center text-white font-bold text-lg md:text-xl shadow-lg shadow-violet-500/30`}>
+                        <span className="relative z-10">{step.number}</span>
+                        <motion.div
+                          className={`absolute inset-0 rounded-full bg-gradient-to-r ${step.color}`}
+                          animate={{ scale: [1, 1.2, 1], opacity: [0.5, 0, 0.5] }}
+                          transition={{ duration: 2, repeat: Infinity }}
+                        />
                       </div>
                     </motion.div>
                     
+                    {/* Icon container */}
                     <motion.div 
-                      className={`w-20 h-20 rounded-2xl bg-gradient-to-r ${step.color} bg-opacity-20 flex items-center justify-center mx-auto mb-6 relative z-10`}
-                      whileHover={{ rotate: [0, 10, -10, 0], scale: 1.1 }}
+                      className={`w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-gradient-to-r ${step.color} bg-opacity-20 flex items-center justify-center mx-auto mb-5 relative z-10 group-hover:bg-opacity-30 transition-all`}
+                      whileHover={{ rotate: [0, 5, -5, 0], scale: 1.1 }}
                       transition={{ duration: 0.5 }}
                     >
-                      <Icon className="w-10 h-10 text-white" />
+                      <Icon className="w-8 h-8 md:w-10 md:h-10 text-white" />
                     </motion.div>
                     
-                    <h3 className="text-xl md:text-2xl font-bold text-white mb-4 relative z-10">{step.title}</h3>
-                    <p className="text-gray-400 leading-relaxed text-sm md:text-base relative z-10 mb-4">{step.description}</p>
+                    {/* Title */}
+                    <h3 className="text-lg md:text-xl lg:text-2xl font-bold text-white mb-3 relative z-10 group-hover:text-transparent group-hover:bg-gradient-to-r group-hover:from-violet-400 group-hover:to-cyan-400 group-hover:bg-clip-text transition-all">
+                      {step.title}
+                    </h3>
                     
-                    {/* Platform badges */}
+                    {/* Description */}
+                    <p className="text-gray-400 leading-relaxed text-sm md:text-base relative z-10 mb-5 min-h-[60px]">
+                      {step.description}
+                    </p>
+                    
+                    {/* Platform badges with icons */}
                     {step.platforms.length > 0 && (
                       <div className="flex flex-wrap gap-2 justify-center mt-4 relative z-10">
-                        {step.platforms.map((platform) => (
-                          <motion.span 
-                            key={platform} 
-                            className="px-3 py-1.5 text-xs bg-white/5 border border-white/10 rounded-full text-gray-300 hover:text-white transition-colors"
-                            whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.1)' }}
-                          >
-                            {platform}
-                          </motion.span>
-                        ))}
+                        {step.platforms.map((platform, pIndex) => {
+                          const PlatformIcon = step.platformIcons?.[pIndex]
+                          return (
+                            <motion.div
+                              key={platform}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 border border-white/10 rounded-full text-gray-300 hover:text-white hover:border-white/30 transition-all cursor-pointer group/badge"
+                              whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.1)' }}
+                            >
+                              {PlatformIcon && (
+                                <PlatformIcon className="w-3.5 h-3.5 group-hover/badge:scale-110 transition-transform" />
+                              )}
+                              <span className="text-xs font-medium">{platform}</span>
+                            </motion.div>
+                          )
+                        })}
                       </div>
                     )}
                     
-                    {/* Decorative SVG for step 2 */}
+                    {/* Decorative elements */}
                     {index === 1 && (
-                      <div className="mt-6 flex justify-center relative z-10">
-                        <div className="w-20 h-20 opacity-60">
+                      <motion.div 
+                        className="mt-4 flex justify-center relative z-10"
+                        animate={{ 
+                          scale: [1, 1.05, 1],
+                          rotate: [0, 5, -5, 0]
+                        }}
+                        transition={{ duration: 4, repeat: Infinity }}
+                      >
+                        <div className="w-16 h-16 md:w-20 md:h-20 opacity-50">
                           <TokenIllustration className="w-full h-full" />
                         </div>
-                      </div>
+                      </motion.div>
                     )}
+                    
+                    {index === 2 && (
+                      <motion.div 
+                        className="mt-4 flex justify-center gap-1 relative z-10"
+                        animate={{ y: [0, -5, 0] }}
+                        transition={{ duration: 2, repeat: Infinity }}
+                      >
+                        <DollarSign className="w-5 h-5 text-emerald-400" />
+                        <TrendingUp className="w-5 h-5 text-emerald-400" />
+                        <Target className="w-5 h-5 text-emerald-400" />
+                      </motion.div>
+                    )}
+                    
+                    {/* Bottom accent line */}
+                    <div className={`absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${gradientClass} opacity-0 group-hover:opacity-100 transition-opacity rounded-b-3xl`} />
                   </motion.div>
                 </motion.div>
               )

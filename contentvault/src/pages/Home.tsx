@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react'
+import React, { useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, useScroll, useTransform, useMotionValue, useSpring } from 'framer-motion'
 import { 
@@ -20,8 +20,9 @@ import {
   Lock,
   type LucideIcon
 } from 'lucide-react'
-import { YouTubeIcon, InstagramIcon, TwitterIcon, LinkedInIcon, TokenIcon } from '../assets/icons'
+import { YouTubeIcon, InstagramIcon, TwitterIcon, LinkedInIcon } from '../assets/icons'
 import PremiumBackground from '../components/PremiumBackground'
+import { ContentVaultLogo, BlockchainIllustration, TokenIllustration, CreatorIllustration } from '../components/svgs'
 
 const Home: React.FC = () => {
   const { scrollYProgress } = useScroll()
@@ -225,6 +226,23 @@ const Home: React.FC = () => {
         </motion.div>
 
         <div className="relative max-w-7xl mx-auto text-center z-10">
+          {/* ContentVault Logo */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8, rotate: -180 }}
+            animate={{ opacity: 1, scale: 1, rotate: 0 }}
+            transition={{ duration: 0.8, type: "spring" }}
+            className="mb-8 flex justify-center"
+          >
+            <div className="relative">
+              <ContentVaultLogo className="w-20 h-20 md:w-24 md:h-24" />
+              <motion.div
+                className="absolute inset-0 bg-gradient-to-r from-violet-400 to-fuchsia-400 rounded-full blur-xl opacity-50"
+                animate={{ scale: [1, 1.2, 1], opacity: [0.5, 0.7, 0.5] }}
+                transition={{ duration: 3, repeat: Infinity }}
+              />
+            </div>
+          </motion.div>
+
           {/* Badge */}
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
@@ -264,10 +282,10 @@ const Home: React.FC = () => {
               </motion.h1>
               
           {/* Subheadline */}
-              <motion.p 
+          <motion.p 
             className="text-xl md:text-2xl text-gray-400 max-w-3xl mx-auto mb-12 leading-relaxed"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.4 }}
           >
             Transform your content into tradeable tokens on Algorand blockchain.
@@ -275,7 +293,40 @@ const Home: React.FC = () => {
             <span className="text-white font-medium">Tokenize YouTube, Instagram, Twitter, LinkedIn.</span>
             <br />
             <span className="text-cyan-400">Earn 5% on every trade. Create prediction markets. Build your creator economy.</span>
-              </motion.p>
+          </motion.p>
+
+          {/* Hero Illustration */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 1, delay: 0.6 }}
+            className="flex justify-center mb-16"
+          >
+            <div className="w-full max-w-2xl h-64 md:h-80 relative">
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="grid grid-cols-2 gap-8 w-full max-w-md">
+                  <motion.div
+                    animate={{ y: [0, -10, 0] }}
+                    transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+                    className="flex justify-center"
+                  >
+                    <div className="w-32 h-32">
+                      <TokenIllustration className="w-full h-full" />
+                    </div>
+                  </motion.div>
+                  <motion.div
+                    animate={{ y: [0, 10, 0] }}
+                    transition={{ duration: 3, repeat: Infinity, ease: "easeInOut", delay: 0.5 }}
+                    className="flex justify-center"
+                  >
+                    <div className="w-32 h-32">
+                      <BlockchainIllustration className="w-full h-full" />
+                    </div>
+                  </motion.div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
 
           {/* CTA Buttons */}
             <motion.div
@@ -433,6 +484,11 @@ const Home: React.FC = () => {
             viewport={{ once: true }}
             className="text-center mb-20"
           >
+            <div className="flex justify-center mb-6">
+              <div className="w-32 h-32 md:w-40 md:h-40">
+                <CreatorIllustration className="w-full h-full" />
+              </div>
+            </div>
             <h2 className="text-4xl md:text-6xl font-bold text-white mb-6">
               The Creator Economy is <span className="text-red-500">Broken</span>
             </h2>
@@ -542,6 +598,11 @@ const Home: React.FC = () => {
             viewport={{ once: true }}
             className="text-center mb-20"
           >
+            <div className="flex justify-center mb-6">
+              <div className="w-48 h-32 md:w-64 md:h-40">
+                <BlockchainIllustration className="w-full h-full" />
+              </div>
+            </div>
             <h2 className="text-4xl md:text-6xl font-bold text-white mb-6">
               Built for <span className="bg-gradient-to-r from-violet-400 to-cyan-400 bg-clip-text text-transparent">Creators</span>
             </h2>
@@ -616,11 +677,17 @@ const Home: React.FC = () => {
           </motion.div>
 
           <div className="grid md:grid-cols-3 gap-8 relative">
-            {/* Connection line */}
+            {/* Connection line with animated dots */}
             <div className="hidden md:block absolute top-1/2 left-1/4 right-1/4 h-1 bg-gradient-to-r from-cyan-500 via-violet-500 to-green-500 opacity-30 rounded-full" />
+            <motion.div
+              className="hidden md:block absolute top-1/2 left-1/4 w-3 h-3 bg-cyan-500 rounded-full"
+              animate={{ x: [0, 200, 400, 0] }}
+              transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+            />
             
             {steps.map((step, index) => {
               const Icon = step.icon
+              const gradientClass = step.color
               return (
                 <motion.div
                   key={index}
@@ -632,7 +699,7 @@ const Home: React.FC = () => {
                   style={{ perspective: 1000 }}
                 >
                   <motion.div 
-                    className="p-8 rounded-3xl bg-white/5 border border-white/10 hover:border-white/30 transition-all text-center group relative overflow-hidden"
+                    className="p-8 rounded-3xl bg-white/5 border border-white/10 hover:border-white/30 transition-all text-center group relative overflow-hidden min-h-[320px]"
                     whileHover={{ 
                       y: -20,
                       z: 50,
@@ -642,7 +709,7 @@ const Home: React.FC = () => {
                     style={{ transformStyle: 'preserve-3d' }}
                   >
                     {/* 3D Background */}
-                    <div className={`absolute inset-0 bg-gradient-to-br ${step.color.replace('from-', 'from-').replace('to-', 'to-')}/10 opacity-0 group-hover:opacity-100 transition-opacity`} />
+                    <div className={`absolute inset-0 bg-gradient-to-br ${gradientClass}/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500`} />
                     
                     {/* Step number - 3D */}
                     <motion.div 
@@ -665,18 +732,31 @@ const Home: React.FC = () => {
                     </motion.div>
                     
                     <h3 className="text-2xl font-bold text-white mb-4 relative z-10">{step.title}</h3>
-                    <p className="text-gray-400 leading-relaxed relative z-10">{step.description}</p>
+                    <p className="text-gray-400 leading-relaxed relative z-10 mb-4">{step.description}</p>
                     
                     {/* Platform badges */}
                     {step.platforms.length > 0 && (
                       <div className="flex flex-wrap gap-2 justify-center mt-4 relative z-10">
                         {step.platforms.map((platform) => (
-                          <span key={platform} className="px-3 py-1 text-xs bg-white/5 border border-white/10 rounded-full text-gray-400">
+                          <motion.span 
+                            key={platform} 
+                            className="px-3 py-1 text-xs bg-white/5 border border-white/10 rounded-full text-gray-400"
+                            whileHover={{ scale: 1.1, backgroundColor: 'rgba(255,255,255,0.1)' }}
+                          >
                             {platform}
-                          </span>
+                          </motion.span>
                         ))}
-                  </div>
-                  )}
+                      </div>
+                    )}
+                    
+                    {/* Decorative SVG for step 2 */}
+                    {index === 1 && (
+                      <div className="mt-6 flex justify-center relative z-10">
+                        <div className="w-24 h-24">
+                          <TokenIllustration className="w-full h-full" />
+                        </div>
+                      </div>
+                    )}
                   </motion.div>
                 </motion.div>
               )
@@ -769,14 +849,14 @@ const Home: React.FC = () => {
           >
             {/* 3D Icon */}
             <motion.div 
-              className="w-24 h-24 mx-auto mb-8 rounded-3xl bg-gradient-to-r from-violet-500 to-fuchsia-500 flex items-center justify-center shadow-2xl relative"
+              className="w-32 h-32 mx-auto mb-8 rounded-3xl bg-gradient-to-r from-violet-500 to-fuchsia-500 flex items-center justify-center shadow-2xl relative"
               animate={{ rotate: [0, 5, -5, 0] }}
               transition={{ duration: 4, repeat: Infinity }}
               whileHover={{ rotateY: 360, scale: 1.1 }}
               style={{ transformStyle: 'preserve-3d' }}
             >
-              <div style={{ transform: 'translateZ(30px)' }}>
-                <TokenIcon className="w-12 h-12 text-white" />
+              <div style={{ transform: 'translateZ(30px)' }} className="w-20 h-20">
+                <TokenIllustration className="w-full h-full" />
               </div>
             </motion.div>
             

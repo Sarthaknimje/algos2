@@ -141,18 +141,18 @@ export const TokenSuccessModal: React.FC<TokenSuccessModalProps> = ({
 
             {/* Creator Address */}
             {displayData.creator && (
-              <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
-                <div className="text-sm text-white/60 mb-1">Creator Address</div>
+            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
+              <div className="text-sm text-white/60 mb-1">Creator Address</div>
                 <div className="text-white font-mono text-sm break-all">{displayData.creator}</div>
-              </div>
+            </div>
             )}
 
             {/* Transaction ID */}
             {displayData.transactionId && (
-              <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
-                <div className="text-sm text-white/60 mb-1">Transaction ID</div>
+            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
+              <div className="text-sm text-white/60 mb-1">Transaction ID</div>
                 <div className="text-white font-mono text-sm break-all">{displayData.transactionId}</div>
-              </div>
+            </div>
             )}
 
             {/* Asset Details */}

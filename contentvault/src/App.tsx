@@ -15,6 +15,7 @@ import YouTubeVideos from './pages/YouTubeVideos'
 import PredictionMarket from './pages/PredictionMarket'
 import CopyTradingDashboard from './pages/CopyTradingDashboard'
 import BotStrategies from './pages/BotStrategies'
+import Referrals from './pages/Referrals'
 
 function App() {
   return (
@@ -35,6 +36,7 @@ function App() {
               <Route path="trade/:symbol" element={<TradingMarketplace />} />
               <Route path="youtube/videos" element={<YouTubeVideos />} />
               <Route path="predictions" element={<PredictionMarket />} />
+              <Route path="referrals" element={<Referrals />} />
               <Route path="auth/youtube/callback" element={<YouTubeCallback />} />
             </Route>
           </Routes>

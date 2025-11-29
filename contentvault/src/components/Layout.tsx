@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Menu, X, Wallet, User, Rocket, Home, BarChart3, Play, TrendingUp, Copy, Bot } from 'lucide-react'
+import { Menu, X, Wallet, User, Rocket, Home, BarChart3, Play, TrendingUp, Copy, Bot, Gift } from 'lucide-react'
 import { useWallet } from '../contexts/WalletContext'
 import { PeraWalletIcon } from '../assets/icons'
 
@@ -18,6 +18,7 @@ const Layout: React.FC = () => {
     { name: 'Tokenize', href: '/tokenize', icon: Rocket },
     { name: 'Marketplace', href: '/marketplace', icon: BarChart3 },
     { name: 'Predictions', href: '/predictions', icon: TrendingUp },
+    { name: 'Referrals', href: '/referrals', icon: Gift },
     { name: 'YouTube Videos', href: '/youtube/videos', icon: Play },
     { name: 'Profile', href: '/profile', icon: User },
   ]
@@ -30,8 +31,8 @@ const Layout: React.FC = () => {
     <div className="min-h-screen bg-[#0a0a0f]">
       {/* Navigation */}
       <nav className="bg-[#0a0a0f]/80 backdrop-blur-xl border-b border-white/5 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
+        <div className="max-w-[1920px] mx-auto px-2 sm:px-4 lg:px-6">
+          <div className="flex justify-between items-center h-14">
             {/* Enhanced Logo */}
             <motion.div
               whileHover={{ scale: 1.05 }}
@@ -63,8 +64,8 @@ const Layout: React.FC = () => {
               </Link>
             </motion.div>
 
-            {/* Enhanced Desktop Navigation */}
-            <div className="hidden md:flex items-center space-x-2">
+            {/* Enhanced Desktop Navigation - Compact for many items */}
+            <div className="hidden lg:flex items-center space-x-0.5 overflow-x-auto scrollbar-hide flex-1 justify-center mx-2">
               {navigation.map((item, index) => {
                 const Icon = item.icon
                 const isActive = location.pathname === item.href
@@ -73,25 +74,48 @@ const Layout: React.FC = () => {
                     key={item.name}
                     initial={{ opacity: 0, y: -20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.5, delay: index * 0.1 }}
+                    transition={{ duration: 0.5, delay: index * 0.05 }}
                   >
                     <Link
                       to={item.href}
-                      className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-all duration-300 group ${
+                      className={`flex items-center space-x-1 px-2 py-1.5 rounded-lg transition-all duration-300 group ${
                         isActive
                           ? 'bg-violet-500/20 text-violet-400 border border-violet-500/30'
                           : 'text-gray-400 hover:text-white hover:bg-white/5'
                       }`}
+                      title={item.name}
                     >
                       <motion.div
                         whileHover={{ scale: 1.1, rotate: 5 }}
                         transition={{ type: "spring", stiffness: 300, damping: 20 }}
                       >
-                        <Icon className={`w-5 h-5 ${isActive ? 'text-violet-400' : 'text-gray-500 group-hover:text-white'}`} />
+                        <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-violet-400' : 'text-gray-500 group-hover:text-white'}`} />
                       </motion.div>
-                      <span className="font-medium">{item.name}</span>
+                      <span className="font-medium text-[10px] whitespace-nowrap">{item.name}</span>
                     </Link>
                   </motion.div>
+                )
+              })}
+            </div>
+            
+            {/* Medium screens - show more items with icons only */}
+            <div className="hidden md:flex lg:hidden items-center space-x-1 overflow-x-auto scrollbar-hide">
+              {navigation.map((item, index) => {
+                const Icon = item.icon
+                const isActive = location.pathname === item.href
+                return (
+                  <Link
+                    key={item.name}
+                    to={item.href}
+                    className={`p-2 rounded-lg transition-all duration-300 flex-shrink-0 ${
+                      isActive
+                        ? 'bg-violet-500/20 text-violet-400'
+                        : 'text-gray-400 hover:text-white hover:bg-white/5'
+                    }`}
+                    title={item.name}
+                  >
+                    <Icon className="w-4 h-4" />
+                  </Link>
                 )
               })}
             </div>

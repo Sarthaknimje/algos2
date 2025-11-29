@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
+import { useNavigate } from 'react-router-dom'
 import {
   Copy,
   ArrowRight,
@@ -12,12 +13,14 @@ import {
   Shield,
   Bot,
   Activity,
-  Star
+  Star,
+  X,
+  ExternalLink
 } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts'
 import PremiumBackground from '../components/PremiumBackground'
 import { useWallet } from '../contexts/WalletContext'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { API_BASE_URL } from '../services/config'
 
 interface TraderSummary {
@@ -54,8 +57,12 @@ const formatPct = (value: number) => `${value.toFixed(2)}%`
 
 const CopyTradingDashboard: React.FC = () => {
   const { address, isConnected } = useWallet()
+  const navigate = useNavigate()
   const [selectedTrader, setSelectedTrader] = useState<string | null>(null)
+  const [selectedTraderForCopy, setSelectedTraderForCopy] = useState<string | null>(null)
   const [isCopyModalOpen, setIsCopyModalOpen] = useState(false)
+  const [isTraderProfileOpen, setIsTraderProfileOpen] = useState(false)
+  const [viewingTrader, setViewingTrader] = useState<TraderSummary | null>(null)
   const [copyAllocation, setCopyAllocation] = useState(10)
   const [copyMaxTrade, setCopyMaxTrade] = useState(5)
   const [copyType, setCopyType] = useState<'proportional' | 'fixed'>('proportional')
@@ -99,6 +106,53 @@ const CopyTradingDashboard: React.FC = () => {
     }
   })
 
+  const { data: viewingTraderTrades } = useQuery({
+    queryKey: ['copy-trading', 'trades', viewingTrader?.trader_address],
+    enabled: !!viewingTrader?.trader_address,
+    queryFn: async (): Promise<TraderTrade[]> => {
+      const res = await fetch(`${API_BASE_URL}/api/copy-trading/trader/${viewingTrader?.trader_address}/trades?limit=100`)
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error || 'Failed to load trader trades')
+      return json.trades || []
+    }
+  })
+
+  const { data: viewingTraderPnl } = useQuery({
+    queryKey: ['copy-trading', 'pnl', viewingTrader?.trader_address],
+    enabled: !!viewingTrader?.trader_address,
+    queryFn: async (): Promise<TraderPnlPoint[]> => {
+      const res = await fetch(`${API_BASE_URL}/api/copy-trading/trader/${viewingTrader?.trader_address}/pnl?timeframe=30d`)
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error || 'Failed to load PnL')
+      return json.points || []
+    }
+  })
+
+  const { data: traderAnalytics, isLoading: isAnalyticsLoading, error: analyticsError } = useQuery({
+    queryKey: ['copy-trading', 'analytics', viewingTrader?.trader_address],
+    enabled: !!viewingTrader?.trader_address,
+    queryFn: async () => {
+      if (!viewingTrader?.trader_address) return null
+      const res = await fetch(`${API_BASE_URL}/api/copy-trading/trader/${viewingTrader.trader_address}/analytics`)
+      if (!res.ok) {
+        const errorText = await res.text()
+        console.error('Analytics fetch error:', res.status, errorText)
+        throw new Error(`HTTP ${res.status}: ${errorText}`)
+      }
+      const json = await res.json()
+      if (!json.success) {
+        console.error('Analytics response error:', json.error)
+        throw new Error(json.error || 'Failed to load analytics')
+      }
+      console.log('✅ Analytics loaded:', json.analytics)
+      return json.analytics || null
+    },
+    retry: 2,
+    refetchOnWindowFocus: false
+  })
+
+  const [activeTab, setActiveTab] = useState<'overview' | 'trades' | 'holdings'>('overview')
+
   const selectedTraderSummary = useMemo(() => {
     if (!leaderboardData || !effectiveTrader) return null
     return leaderboardData.find(t => t.trader_address === effectiveTrader) || null
@@ -128,9 +182,9 @@ const CopyTradingDashboard: React.FC = () => {
   }, [myProfiles])
 
   const createProfile = async () => {
-    if (!address || !effectiveTrader) return
+    if (!address || !selectedTraderForCopy) return
     const body = {
-      leader_address: effectiveTrader,
+      leader_address: selectedTraderForCopy,
       follower_address: address,
       allocation_percent: copyAllocation,
       max_single_trade_algo: copyMaxTrade,
@@ -146,6 +200,23 @@ const CopyTradingDashboard: React.FC = () => {
     if (!json.success) throw new Error(json.error || 'Failed to create copy profile')
     await queryClient.invalidateQueries({ queryKey: ['copy-trading', 'profiles', address] })
     setIsCopyModalOpen(false)
+    setSelectedTraderForCopy(null)
+  }
+  
+  const handleStartCopying = () => {
+    if (!isConnected || !address) {
+      alert('Please connect your wallet first')
+      return
+    }
+    if (!leaderboardData || leaderboardData.length === 0) {
+      alert('No traders available to copy')
+      return
+    }
+    // If no trader selected, use the first one
+    if (!selectedTraderForCopy && leaderboardData.length > 0) {
+      setSelectedTraderForCopy(leaderboardData[0].trader_address)
+    }
+    setIsCopyModalOpen(true)
   }
 
   return (
@@ -207,7 +278,7 @@ const CopyTradingDashboard: React.FC = () => {
               <button
                 type="button"
                 disabled={!isConnected}
-                onClick={() => setIsCopyModalOpen(true)}
+                onClick={handleStartCopying}
                 className="mt-4 w-full flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white text-sm font-semibold py-2.5 hover:from-violet-400 hover:to-fuchsia-400 transition-colors"
               >
                 <Shield className="w-4 h-4" />
@@ -340,7 +411,7 @@ const CopyTradingDashboard: React.FC = () => {
               <button
                 type="button"
                 disabled={!isConnected || !effectiveTrader}
-                onClick={() => setIsCopyModalOpen(true)}
+                onClick={handleStartCopying}
                 className="mt-4 w-full flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white text-sm font-semibold py-2.5 hover:from-violet-400 hover:to-fuchsia-400 transition-colors"
               >
                 <Copy className="w-4 h-4" />
@@ -398,19 +469,47 @@ const CopyTradingDashboard: React.FC = () => {
                   Close
                 </button>
               </div>
-              {!isConnected || !effectiveTrader ? (
+              {!isConnected ? (
                 <p className="text-xs text-gray-400">
-                  Connect your wallet and select a trader from the leaderboard to configure copy trading.
+                  Connect your wallet to start copy trading.
+                </p>
+              ) : !leaderboardData || leaderboardData.length === 0 ? (
+                <p className="text-xs text-gray-400">
+                  No traders available yet. Start trading to build the leaderboard.
                 </p>
               ) : (
                 <>
-                  <p className="text-xs text-gray-400 mb-4">
-                    You are about to follow trades of:
-                    <br />
-                    <span className="font-mono text-violet-200 text-[11px]">
-                      {effectiveTrader}
-                    </span>
-                  </p>
+                  <div className="mb-4">
+                    <label className="block text-gray-300 mb-2 text-xs font-semibold">Select Trader to Follow</label>
+                    <select
+                      value={selectedTraderForCopy || leaderboardData[0]?.trader_address || ''}
+                      onChange={(e) => setSelectedTraderForCopy(e.target.value)}
+                      className="w-full rounded-xl bg-black/40 border border-white/10 px-3 py-2 text-gray-100 text-xs focus:outline-none focus:border-violet-400"
+                    >
+                      {leaderboardData.map((trader) => (
+                        <option key={trader.trader_address} value={trader.trader_address}>
+                          {trader.trader_address.slice(0, 8)}...{trader.trader_address.slice(-6)} • {trader.trade_count} trades • {formatPct(trader.roi_pct)} ROI
+                        </option>
+                      ))}
+                    </select>
+                    {selectedTraderForCopy && (() => {
+                      const trader = leaderboardData.find(t => t.trader_address === selectedTraderForCopy)
+                      return trader ? (
+                        <div className="mt-2 p-2 rounded-lg bg-violet-500/10 border border-violet-500/30 text-[11px]">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-gray-400">Net P&L:</span>
+                            <span className={trader.net_pnl >= 0 ? 'text-emerald-300' : 'text-rose-300'}>
+                              {formatAlgo(trader.net_pnl)} ALGO
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-gray-400">Tokens Traded:</span>
+                            <span className="text-violet-200">{trader.distinct_tokens}</span>
+                          </div>
+                        </div>
+                      ) : null
+                    })()}
+                  </div>
                   <div className="space-y-4 text-xs">
                     <div>
                       <label className="block text-gray-300 mb-1">Allocation (% of portfolio)</label>
@@ -591,9 +690,17 @@ const CopyTradingDashboard: React.FC = () => {
                         {formatPct(trader.roi_pct)}
                       </p>
                     </div>
-                    <span className="px-3 py-1.5 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 text-[11px] text-white font-semibold">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setViewingTrader(trader)
+                        setIsTraderProfileOpen(true)
+                      }}
+                      className="px-3 py-1.5 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 text-[11px] text-white font-semibold hover:from-violet-400 hover:to-fuchsia-400 transition-colors"
+                    >
                       View
-                    </span>
+                    </button>
                   </div>
                 </motion.button>
               ))}
@@ -620,11 +727,20 @@ const CopyTradingDashboard: React.FC = () => {
                 <DollarSign className="w-4 h-4 text-emerald-300" />
                 <h3 className="text-sm font-semibold text-white">Safety &amp; Control</h3>
               </div>
-              <ul className="text-xs text-gray-300 space-y-2">
+              <ul className="text-xs text-gray-300 space-y-2 mb-4">
                 <li>• You can pause or stop copy trading at any time.</li>
                 <li>• No private keys ever leave your device – Pera Wallet signs all transactions.</li>
                 <li>• Bot and copy-trade strategies are transparent and configurable.</li>
               </ul>
+              <button
+                type="button"
+                onClick={() => navigate('/bot-strategies')}
+                className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-violet-500 text-white text-xs font-semibold py-2.5 hover:from-cyan-400 hover:to-violet-400 transition-colors"
+              >
+                <Bot className="w-4 h-4" />
+                <span>Manage Bot Strategies</span>
+                <ArrowRight className="w-3 h-3" />
+              </button>
             </div>
 
             {/* Real trades table */}
@@ -699,6 +815,392 @@ const CopyTradingDashboard: React.FC = () => {
             </div>
           </div>
         </section>
+
+        {/* Trader Profile Modal - GMGN.AI Style */}
+        {isTraderProfileOpen && viewingTrader && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              className="w-full max-w-7xl max-h-[95vh] overflow-auto rounded-3xl bg-gradient-to-br from-slate-900/95 via-violet-900/20 to-slate-950/95 border border-violet-500/30 shadow-2xl"
+            >
+              <div className="sticky top-0 z-20 bg-gradient-to-b from-slate-900/95 to-transparent backdrop-blur-sm border-b border-violet-500/20 p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h2 className="text-3xl font-bold text-white mb-2 flex items-center gap-3">
+                      <span className="bg-gradient-to-r from-violet-400 via-fuchsia-400 to-cyan-400 bg-clip-text text-transparent">
+                        {viewingTrader.trader_address.slice(0, 8)}...{viewingTrader.trader_address.slice(-6)}
+                      </span>
+                      <span className="px-2 py-1 rounded-lg bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-xs font-semibold">
+                        LIVE
+                      </span>
+                    </h2>
+                    <p className="text-xs text-gray-400 font-mono">{viewingTrader.trader_address}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsTraderProfileOpen(false)}
+                    className="text-gray-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-white/5"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Tabs */}
+                <div className="flex gap-2 border-b border-white/10">
+                  {(['overview', 'trades', 'holdings'] as const).map((tab) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      onClick={() => setActiveTab(tab)}
+                      className={`px-4 py-2 text-sm font-semibold transition-colors capitalize ${
+                        activeTab === tab
+                          ? 'text-violet-300 border-b-2 border-violet-400'
+                          : 'text-gray-400 hover:text-gray-300'
+                      }`}
+                    >
+                      {tab}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="p-6 space-y-6">
+                {/* Overview Tab */}
+                {activeTab === 'overview' && (
+                  <>
+                    {/* Key Metrics */}
+                    {isAnalyticsLoading ? (
+                      <div className="text-center py-8 text-gray-400">Loading analytics...</div>
+                    ) : analyticsError ? (
+                      <div className="text-center py-8 text-rose-400">
+                        Error loading analytics: {analyticsError.message}
+                      </div>
+                    ) : traderAnalytics && Object.keys(traderAnalytics).length > 0 ? (
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="rounded-2xl bg-gradient-to-br from-violet-500/10 to-fuchsia-500/10 border border-violet-500/30 p-4">
+                          <p className="text-xs text-gray-400 mb-1">7D Realized P&L</p>
+                          <p className={`text-2xl font-bold ${traderAnalytics.realized_pnl_7d >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {traderAnalytics.realized_pnl_7d >= 0 ? '+' : ''}{formatPct(traderAnalytics.realized_pnl_7d_pct)}
+                          </p>
+                          <p className="text-xs text-gray-400 mt-1">
+                            {formatAlgo(traderAnalytics.realized_pnl_7d)} ALGO
+                          </p>
+                        </div>
+                        <div className="rounded-2xl bg-gradient-to-br from-emerald-500/10 to-cyan-500/10 border border-emerald-500/30 p-4">
+                          <p className="text-xs text-gray-400 mb-1">Win Rate</p>
+                          <p className="text-2xl font-bold text-emerald-300">
+                            {traderAnalytics.win_rate.toFixed(2)}%
+                          </p>
+                          <p className="text-xs text-gray-400 mt-1">
+                            {traderAnalytics.total_tokens_traded} tokens
+                          </p>
+                        </div>
+                        <div className="rounded-2xl bg-gradient-to-br from-cyan-500/10 to-blue-500/10 border border-cyan-500/30 p-4">
+                          <p className="text-xs text-gray-400 mb-1">Total P&L</p>
+                          <p className={`text-2xl font-bold ${traderAnalytics.total_pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {formatPct(traderAnalytics.total_pnl_pct)}
+                          </p>
+                          <p className="text-xs text-gray-400 mt-1">
+                            {formatAlgo(traderAnalytics.total_pnl)} ALGO
+                          </p>
+                        </div>
+                        <div className="rounded-2xl bg-gradient-to-br from-slate-500/10 to-gray-500/10 border border-slate-500/30 p-4">
+                          <p className="text-xs text-gray-400 mb-1">Unrealized Profits</p>
+                          <p className={`text-2xl font-bold ${traderAnalytics.unrealized_profits >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                            {traderAnalytics.unrealized_profits >= 0 ? '+' : ''}{formatAlgo(traderAnalytics.unrealized_profits)} ALGO
+                          </p>
+                          <p className="text-xs text-gray-400 mt-1">Current holdings</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-gray-400">No analytics data available</div>
+                    )}
+
+                    {/* P&L Chart */}
+                    {viewingTraderPnl && viewingTraderPnl.length > 0 && (
+                      <div className="rounded-2xl bg-black/40 border border-white/10 p-6">
+                        <h3 className="text-lg font-semibold text-white mb-4">7D Realized P&L</h3>
+                        <div className="h-64">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={viewingTraderPnl.slice(-7)}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                              <XAxis dataKey="day" stroke="#9CA3AF" fontSize={12} />
+                              <YAxis stroke="#9CA3AF" fontSize={12} />
+                              <Tooltip
+                                contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151', borderRadius: '8px' }}
+                                labelStyle={{ color: '#E5E7EB' }}
+                              />
+                              <Line
+                                type="monotone"
+                                dataKey="pnl"
+                                stroke="#8B5CF6"
+                                strokeWidth={3}
+                                dot={{ fill: '#8B5CF6', r: 4 }}
+                                activeDot={{ r: 6 }}
+                              />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Analysis Section */}
+                    <div className="grid md:grid-cols-2 gap-6">
+                      <div className="rounded-2xl bg-black/40 border border-white/10 p-6">
+                        <h3 className="text-sm font-semibold text-white mb-4">Analysis</h3>
+                        <div className="space-y-3 text-xs">
+                          <div className="flex justify-between">
+                            <span className="text-gray-400">7D TXs:</span>
+                            <span className="text-white font-semibold">
+                              {traderAnalytics ? `${traderAnalytics.trades_7d} / ${traderAnalytics.tokens_traded_7d}` : '--'}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-400">7D Avg Duration:</span>
+                            <span className="text-white font-semibold">
+                              {traderAnalytics ? `${Math.round(traderAnalytics.avg_duration_min)}m` : '--'}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-400">7D Cost:</span>
+                            <span className="text-white font-semibold">
+                              {traderAnalytics ? `${formatAlgo(traderAnalytics.total_cost_7d)} ALGO` : '--'}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-400">7D Avg Cost / Avg Sold:</span>
+                            <span className="text-white font-semibold">
+                              {traderAnalytics ? `${formatAlgo(traderAnalytics.avg_cost)} / ${formatAlgo(traderAnalytics.avg_sold)}` : '--'}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-400">7D Avg Realized Profits:</span>
+                            <span className="text-emerald-300 font-semibold">
+                              {traderAnalytics ? `+${formatAlgo(traderAnalytics.avg_realized_profits)} ALGO` : '--'}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-400">7D Fees:</span>
+                            <span className="text-white font-semibold">
+                              {traderAnalytics ? `${formatAlgo(traderAnalytics.fees_7d)} ALGO` : '--'}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-400">7D Vol:</span>
+                            <span className="text-white font-semibold">
+                              {traderAnalytics ? `${formatAlgo(traderAnalytics.volume_7d)} ALGO` : '--'}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-400">Tracked / Renamed:</span>
+                            <span className="text-white font-semibold">
+                              {traderAnalytics ? `${traderAnalytics.total_tokens_traded} / 0` : '--'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Distribution */}
+                      <div className="rounded-2xl bg-black/40 border border-white/10 p-6">
+                        <h3 className="text-sm font-semibold text-white mb-4">Distribution (Token {traderAnalytics?.total_tokens_traded || 0})</h3>
+                        {traderAnalytics?.pnl_distribution && (
+                          <div className="space-y-2 text-xs">
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-400">&gt;500%:</span>
+                              <span className="text-emerald-300 font-semibold">
+                                {traderAnalytics.pnl_distribution.gt_500} ({traderAnalytics.total_tokens_traded > 0 ? ((traderAnalytics.pnl_distribution.gt_500 / traderAnalytics.total_tokens_traded) * 100).toFixed(2) : '0.00'}%)
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-400">200% ~ 500%:</span>
+                              <span className="text-emerald-200 font-semibold">
+                                {traderAnalytics.pnl_distribution['200_500']} ({traderAnalytics.total_tokens_traded > 0 ? ((traderAnalytics.pnl_distribution['200_500'] / traderAnalytics.total_tokens_traded) * 100).toFixed(2) : '0.00'}%)
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-400">0% ~ 200%:</span>
+                              <span className="text-gray-300 font-semibold">
+                                {traderAnalytics.pnl_distribution['0_200']} ({traderAnalytics.total_tokens_traded > 0 ? ((traderAnalytics.pnl_distribution['0_200'] / traderAnalytics.total_tokens_traded) * 100).toFixed(2) : '0.00'}%)
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-400">-50% ~ 0%:</span>
+                              <span className="text-amber-300 font-semibold">
+                                {traderAnalytics.pnl_distribution.neg_50_0} ({traderAnalytics.total_tokens_traded > 0 ? ((traderAnalytics.pnl_distribution.neg_50_0 / traderAnalytics.total_tokens_traded) * 100).toFixed(2) : '0.00'}%)
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-400">&lt;-50%:</span>
+                              <span className="text-rose-300 font-semibold">
+                                {traderAnalytics.pnl_distribution.lt_neg_50} ({traderAnalytics.total_tokens_traded > 0 ? ((traderAnalytics.pnl_distribution.lt_neg_50 / traderAnalytics.total_tokens_traded) * 100).toFixed(2) : '0.00'}%)
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* Trades Tab */}
+                {activeTab === 'trades' && (
+                  <div className="rounded-2xl bg-black/40 border border-white/10 overflow-hidden">
+                    <div className="p-4 border-b border-white/10">
+                      <h3 className="text-lg font-semibold text-white">Recent PnL</h3>
+                    </div>
+                    <div className="max-h-96 overflow-auto">
+                      <table className="min-w-full text-xs">
+                        <thead className="bg-white/5 text-gray-300 sticky top-0 z-10">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-medium">Time</th>
+                            <th className="px-4 py-3 text-left font-medium">Token</th>
+                            <th className="px-4 py-3 text-right font-medium">Type</th>
+                            <th className="px-4 py-3 text-right font-medium">Amount</th>
+                            <th className="px-4 py-3 text-right font-medium">Price (ALGO)</th>
+                            <th className="px-4 py-3 text-right font-medium">Total (ALGO)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {viewingTraderTrades && viewingTraderTrades.length > 0 ? (
+                            viewingTraderTrades.map((trade, idx) => (
+                              <tr key={`${trade.transaction_id}-${idx}`} className="border-t border-white/5 hover:bg-white/5 transition-colors">
+                                <td className="px-4 py-3 text-gray-400">
+                                  {new Date(trade.created_at).toLocaleString('en-GB', { 
+                                    day: '2-digit', 
+                                    month: '2-digit', 
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </td>
+                                <td className="px-4 py-3 text-gray-200 font-semibold">{trade.token_symbol || trade.asa_id}</td>
+                                <td className="px-4 py-3 text-right">
+                                  <span className={`px-2 py-1 rounded-full text-[10px] font-semibold ${
+                                    trade.trade_type === 'buy' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'
+                                  }`}>
+                                    {trade.trade_type.toUpperCase()}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-right text-gray-200">{trade.amount.toFixed(2)}</td>
+                                <td className="px-4 py-3 text-right text-gray-200">{trade.price.toFixed(4)}</td>
+                                <td className="px-4 py-3 text-right text-gray-200 font-semibold">{trade.total_value.toFixed(4)}</td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={6} className="px-4 py-8 text-center text-gray-400">No trades found</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Holdings Tab */}
+                {activeTab === 'holdings' && (
+                  <div className="rounded-2xl bg-black/40 border border-white/10 overflow-hidden">
+                    <div className="p-4 border-b border-white/10">
+                      <h3 className="text-lg font-semibold text-white">Holdings</h3>
+                    </div>
+                    <div className="max-h-96 overflow-auto">
+                      <table className="min-w-full text-xs">
+                        <thead className="bg-white/5 text-gray-300 sticky top-0 z-10">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-medium">Type</th>
+                            <th className="px-4 py-3 text-left font-medium">Token</th>
+                            <th className="px-4 py-3 text-right font-medium">MC</th>
+                            <th className="px-4 py-3 text-right font-medium">Amount</th>
+                            <th className="px-4 py-3 text-right font-medium">Total USD</th>
+                            <th className="px-4 py-3 text-right font-medium">Profit</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {isAnalyticsLoading ? (
+                            <tr>
+                              <td colSpan={6} className="px-4 py-8 text-center text-gray-400">Loading holdings...</td>
+                            </tr>
+                          ) : analyticsError ? (
+                            <tr>
+                              <td colSpan={6} className="px-4 py-8 text-center text-rose-400">
+                                Error: {analyticsError.message}
+                              </td>
+                            </tr>
+                          ) : traderAnalytics?.holdings && Array.isArray(traderAnalytics.holdings) && traderAnalytics.holdings.length > 0 ? (
+                            traderAnalytics.holdings.map((holding, idx) => (
+                              <tr key={holding.asa_id} className="border-t border-white/5 hover:bg-white/5 transition-colors">
+                                <td className="px-4 py-3">
+                                  <span className="px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-semibold">Buy</span>
+                                </td>
+                                <td className="px-4 py-3 text-gray-200 font-semibold">{holding.token_symbol}</td>
+                                <td className="px-4 py-3 text-right text-gray-400">
+                                  {holding.market_cap > 1000000 ? `$${(holding.market_cap / 1000000).toFixed(2)}M` : holding.market_cap > 1000 ? `$${(holding.market_cap / 1000).toFixed(2)}K` : holding.market_cap > 0 ? `$${holding.market_cap.toFixed(2)}` : '--'}
+                                </td>
+                                <td className="px-4 py-3 text-right text-gray-200">{holding.amount.toFixed(4)}</td>
+                                <td className="px-4 py-3 text-right text-gray-200">{formatAlgo(holding.total_value)} ALGO</td>
+                                <td className="px-4 py-3 text-right">
+                                  <div className="flex items-center justify-end gap-2">
+                                    <span className={holding.unrealized_pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                                      {holding.unrealized_pnl >= 0 ? '+' : ''}{formatAlgo(holding.unrealized_pnl)} ALGO
+                                    </span>
+                                    {viewingTrader?.trader_address === address && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          // Navigate to marketplace to sell
+                                          window.location.href = `/marketplace?token=${holding.asa_id}&action=sell`
+                                        }}
+                                        className="px-2 py-1 rounded-lg bg-rose-500/20 border border-rose-500/40 text-rose-300 text-[10px] font-semibold hover:bg-rose-500/30 transition-colors"
+                                      >
+                                        Sell
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={6} className="px-4 py-8 text-center text-gray-400">No current holdings</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="sticky bottom-0 bg-gradient-to-t from-slate-900/95 to-transparent backdrop-blur-sm border-t border-violet-500/20 p-6 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedTrader(viewingTrader.trader_address)
+                    setIsTraderProfileOpen(false)
+                  }}
+                  className="px-6 py-3 rounded-xl bg-violet-500/20 border border-violet-500/40 text-violet-200 text-sm font-semibold hover:bg-violet-500/30 transition-colors flex items-center gap-2"
+                >
+                  <Activity className="w-4 h-4" />
+                  Track This Trader
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedTraderForCopy(viewingTrader.trader_address)
+                    setIsTraderProfileOpen(false)
+                    setIsCopyModalOpen(true)
+                  }}
+                  className="px-6 py-3 rounded-xl bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white text-sm font-semibold hover:from-violet-400 hover:to-fuchsia-400 transition-colors flex items-center gap-2"
+                >
+                  <Copy className="w-4 h-4" />
+                  Start Copying
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
       </main>
     </div>
   )

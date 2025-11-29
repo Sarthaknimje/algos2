@@ -7,7 +7,6 @@ import {
   DollarSign, 
   TrendingUp, 
   Users, 
-  Eye,
   Plus,
   Copy,
   CheckCircle,
@@ -37,7 +36,7 @@ interface Token {
   content_url?: string
   content_thumbnail?: string
   youtube_channel_title?: string
-}
+  }
 
 interface YouTubeChannel {
     id: string
@@ -59,6 +58,7 @@ const Profile: React.FC = () => {
   const [, setIsLoadingYouTube] = useState(false) // Used to track loading state
   const [isConnectingYouTube, setIsConnectingYouTube] = useState(false)
   const [copiedAddress, setCopiedAddress] = useState(false)
+  const [linkedinFollowers, setLinkedinFollowers] = useState<number>(0)
 
   // Fetch user's tokens
   const fetchUserTokens = useCallback(async () => {
@@ -244,7 +244,40 @@ const Profile: React.FC = () => {
 
   const activeTokens = tokens.length
   const totalSubscribers = youtubeChannel?.subscriberCount || 0
-  const totalViews = youtubeChannel?.viewCount || 0
+  
+  // Fetch LinkedIn followers (if user has LinkedIn tokens)
+  useEffect(() => {
+    const fetchLinkedInFollowers = async () => {
+      // Check if user has any LinkedIn tokens to get profile URL
+      const linkedinToken = tokens.find(t => t.platform === 'linkedin' && t.content_url)
+      if (linkedinToken?.content_url) {
+        try {
+          // Extract LinkedIn profile URL from post URL
+          const profileMatch = linkedinToken.content_url.match(/linkedin\.com\/in\/([^/?]+)/)
+          if (profileMatch) {
+            const profileUrl = `https://www.linkedin.com/in/${profileMatch[1]}/`
+            const response = await fetch(`${BACKEND_URL}/api/linkedin/profile`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ profile_url: profileUrl })
+            })
+            if (response.ok) {
+              const data = await response.json()
+              if (data.success && data.profile?.followers) {
+                setLinkedinFollowers(data.profile.followers)
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching LinkedIn followers:', error)
+        }
+      }
+    }
+    
+    if (tokens.length > 0) {
+      fetchLinkedInFollowers()
+    }
+  }, [tokens])
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: User },
@@ -347,8 +380,8 @@ const Profile: React.FC = () => {
       {youtubeChannel ? (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            { icon: Users, value: formatNumber(totalSubscribers), label: 'Subscribers', color: 'from-violet-500 to-purple-500' },
-            { icon: Eye, value: formatNumber(totalViews), label: 'Total Views', color: 'from-cyan-500 to-blue-500' },
+            { icon: Users, value: formatNumber(totalSubscribers), label: 'YouTube Subscribers', color: 'from-red-500 to-red-600' },
+            { icon: Users, value: linkedinFollowers > 0 ? formatNumber(linkedinFollowers) : '--', label: 'LinkedIn Followers', color: 'from-blue-500 to-blue-600' },
             { icon: TrendingUp, value: activeTokens, label: 'Active Tokens', color: 'from-emerald-500 to-green-500' },
             { icon: DollarSign, value: `${formatNumber(earnings.totalEarned)} ALGO`, label: 'Total Earned', color: 'from-violet-500 to-fuchsia-500' }
           ].map((stat, index) => (

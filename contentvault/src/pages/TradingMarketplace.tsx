@@ -85,6 +85,8 @@ const TradingMarketplace: React.FC = () => {
   const { isConnected, address, balance, connectWallet, peraWallet, isLoading } = useWallet()
   
   const [activeTab, setActiveTab] = useState<'buy' | 'sell'>('buy')
+  
+  // Refresh balance when switching to sell tab (defined after fetchUserTokenBalance)
   const [orderType, setOrderType] = useState<'market' | 'limit'>('market')
   const [amount, setAmount] = useState('')
   const [price, setPrice] = useState('')
@@ -125,20 +127,59 @@ const TradingMarketplace: React.FC = () => {
           if (token && token.asa_id) {
             // Fetch detailed token info including bonding curve
             const tokenDetails = await TradingService.getTokenDetails(token.asa_id)
+            // Calculate real market cap: current_price * total_supply (always real-time, never use stored value)
+            const realMarketCap = (token.current_price || 0) * (token.total_supply || 0)
+            
+            // Parse bonding curve state properly
+            let parsedBondingCurveState = null
+            if (tokenDetails?.bonding_curve_state) {
+              try {
+                // If it's a string, parse it; if it's already an object, use it
+                if (typeof tokenDetails.bonding_curve_state === 'string') {
+                  parsedBondingCurveState = JSON.parse(tokenDetails.bonding_curve_state)
+                } else {
+                  parsedBondingCurveState = tokenDetails.bonding_curve_state
+                }
+              } catch (e) {
+                console.error('Error parsing bonding curve state:', e)
+                parsedBondingCurveState = { token_supply: 0, algo_reserve: 0 }
+              }
+            }
+            
+            // Parse bonding curve config
+            let parsedBondingCurveConfig = null
+            if (tokenDetails?.bonding_curve_config) {
+              try {
+                if (typeof tokenDetails.bonding_curve_config === 'string') {
+                  parsedBondingCurveConfig = JSON.parse(tokenDetails.bonding_curve_config)
+                } else {
+                  parsedBondingCurveConfig = tokenDetails.bonding_curve_config
+                }
+              } catch (e) {
+                console.error('Error parsing bonding curve config:', e)
+                parsedBondingCurveConfig = null
+              }
+            }
+            
             const enhancedToken = {
               ...token,
               ...tokenDetails,
               high24h: token.current_price * 1.05,
               low24h: token.current_price * 0.95,
               volume24h: token.volume_24h || 0,
-              marketCap: token.market_cap || (token.current_price * token.total_supply),
+              marketCap: realMarketCap, // Always calculate real-time from current_price * total_supply
               // Parse bonding curve if available
-              bonding_curve_config: tokenDetails?.bonding_curve_config || null,
-              bonding_curve_state: tokenDetails?.bonding_curve_state || null
+              bonding_curve_config: parsedBondingCurveConfig,
+              bonding_curve_state: parsedBondingCurveState || { token_supply: 0, algo_reserve: 0 }
             }
             setTokenData(enhancedToken)
             setCurrentPrice(token.current_price)
             setPriceChange24h(token.price_change_24h || 0)
+            
+            // Fetch user's token balance when token data is loaded
+            if (isConnected && address && enhancedToken.asa_id) {
+              fetchUserTokenBalance(enhancedToken.asa_id)
+            }
             
             // Fetch real trade history for chart
             fetchTradeHistory(token.asa_id)
@@ -203,13 +244,76 @@ const TradingMarketplace: React.FC = () => {
     }
   }
 
+  // Fetch user's token balance from blockchain
+  const fetchUserTokenBalance = async (asaId: number) => {
+    if (!address || !isConnected || !asaId) {
+      setUserTokenBalance(0)
+      return
+    }
+
+    try {
+      // Use Algorand service to fetch balance directly from blockchain
+      const { algorandService } = await import('../services/algorandService')
+      
+      // Method 1: Try getAssetBalances (more detailed)
+      try {
+        const assetBalances = await algorandService.getAssetBalances(address)
+        const tokenBalance = assetBalances.find(ab => ab.assetId === asaId)
+        if (tokenBalance) {
+          // Convert from raw amount to token units (handle decimals)
+          const decimals = tokenBalance.decimals || 0
+          const balance = decimals > 0 ? tokenBalance.amount / Math.pow(10, decimals) : tokenBalance.amount
+          setUserTokenBalance(balance)
+          console.log(`✅ Fetched token balance: ${balance} (ASA ${asaId})`)
+          return
+        }
+      } catch (e) {
+        console.warn('getAssetBalances failed, trying alternative:', e)
+      }
+      
+      // Method 2: Try getAccountAssets (simpler)
+      try {
+        const accountAssets = await algorandService.getAccountAssets(address)
+        const asset = accountAssets.find((a: any) => a['asset-id'] === asaId)
+        if (asset) {
+          // Get asset info to check decimals
+          const assetInfo = await algorandService.getAssetInfo(asaId)
+          const decimals = assetInfo.params.decimals || 0
+          const balance = decimals > 0 ? asset.amount / Math.pow(10, decimals) : asset.amount
+          setUserTokenBalance(balance)
+          console.log(`✅ Fetched token balance: ${balance} (ASA ${asaId})`)
+          return
+        }
+      } catch (e) {
+        console.warn('getAccountAssets failed:', e)
+      }
+      
+      // If no balance found, user doesn't have this token
+      setUserTokenBalance(0)
+      console.log(`ℹ️ No balance found for ASA ${asaId}`)
+    } catch (error) {
+      console.error('Error fetching token balance:', error)
+      setUserTokenBalance(0)
+    }
+  }
+
   // Initialize user balances when wallet connects
   useEffect(() => {
     if (isConnected && balance) {
       setUserAlgoBalance(balance)
-      setUserTokenBalance(0) // Start with 0 tokens
+      // Fetch token balance when token data is available
+      if (tokenData?.asa_id) {
+        fetchUserTokenBalance(tokenData.asa_id)
+      }
     }
-  }, [isConnected, balance])
+  }, [isConnected, balance, tokenData?.asa_id])
+  
+  // Refresh balance when switching to sell tab
+  useEffect(() => {
+    if (activeTab === 'sell' && isConnected && address && tokenData?.asa_id) {
+      fetchUserTokenBalance(tokenData.asa_id)
+    }
+  }, [activeTab, isConnected, address, tokenData?.asa_id])
 
   // Refresh data periodically
   useEffect(() => {
@@ -441,18 +545,9 @@ const TradingMarketplace: React.FC = () => {
         
         finalPrice = result.new_price
         
-        // Transfer tokens to user (simplified - in production this would be handled by smart contract)
-        try {
-          await transferASAWithPera({
-            sender: address!,
-            peraWallet: peraWallet,
-            receiver: address!,
-            assetId: assetId,
-            amount: Math.floor(tradeAmount)
-          })
-        } catch (transferError) {
-          console.warn('Token transfer may have failed:', transferError)
-        }
+        // Note: Token transfer is handled by the backend's bonding_curve_buy endpoint
+        // The backend transfers tokens from creator to buyer automatically
+        // No need for additional transfer here
       } else {
         // Sell: transfer tokens first
         txId = await transferASAWithPera({
@@ -490,6 +585,14 @@ const TradingMarketplace: React.FC = () => {
       // Refresh token data and trade history
       await fetchTokenData()
       await fetchTradeHistory(assetId)
+      
+      // Wait a moment for blockchain to update, then refresh user token balance
+      setTimeout(async () => {
+        await fetchUserTokenBalance(assetId)
+      }, 2000) // Wait 2 seconds for blockchain confirmation
+      
+      // Also refresh immediately (in case it's already updated)
+      await fetchUserTokenBalance(assetId)
 
       // Show success modal with confetti
       setSuccessTradeData({
@@ -504,7 +607,13 @@ const TradingMarketplace: React.FC = () => {
       setPrice('')
     } catch (error: any) {
       console.error('Trade error:', error)
-      setTradeError(error.message || 'Failed to execute trade. Please try again.')
+      
+      // Handle network mismatch error specifically
+      if (error?.name === 'NetworkMismatchError' || error?.message?.includes('Network mismatch') || error?.message?.includes('different networks')) {
+        setTradeError('⚠️ Network Mismatch!\n\nPlease ensure your Pera Wallet is set to TESTNET.\n\nTo fix:\n1. Open Pera Wallet app\n2. Go to Settings\n3. Switch to Testnet\n4. Try again')
+      } else {
+        setTradeError(error.message || 'Failed to execute trade. Please try again.')
+      }
     } finally {
       setIsProcessing(false)
     }
@@ -921,9 +1030,27 @@ const TradingMarketplace: React.FC = () => {
                 >
                   <BondingCurveChart
                     config={tokenData.bonding_curve_config}
-                    currentSupply={tokenData.bonding_curve_state.token_supply || 0}
-                    currentPrice={currentPrice}
-                    marketCap={tokenData.marketCap || tokenData.market_cap || 0}
+                    currentSupply={
+                      (() => {
+                        const supply = tokenData.bonding_curve_state?.token_supply
+                        const numSupply = typeof supply === 'number' ? supply : (typeof supply === 'string' ? parseFloat(supply) : 0)
+                        return isNaN(numSupply) ? 0 : numSupply
+                      })()
+                    }
+                    currentPrice={
+                      (() => {
+                        const price = Number(tokenData.current_price || currentPrice)
+                        return isNaN(price) || price <= 0 ? (tokenData.bonding_curve_config?.initial_price || 0.001) : price
+                      })()
+                    }
+                    marketCap={
+                      (() => {
+                        const price = Number(tokenData.current_price || 0)
+                        const supply = Number(tokenData.total_supply || 0)
+                        const cap = price * supply
+                        return isNaN(cap) ? 0 : cap
+                      })()
+                    }
                   />
                 </motion.div>
               )}
@@ -1177,8 +1304,17 @@ const TradingMarketplace: React.FC = () => {
                     </span>
                   </div>
                   <div className="flex items-center justify-between mt-2">
-                    <span className="text-gray-400 text-sm">Available: {userAlgoBalance.toFixed(2)} ALGO</span>
-                    <span className="text-gray-400 text-sm">Tokens: {userTokenBalance.toFixed(2)} {tokenData.symbol}</span>
+                    {activeTab === 'buy' ? (
+                      <>
+                        <span className="text-gray-400 text-sm">Available: {userAlgoBalance.toFixed(2)} ALGO</span>
+                        <span className="text-gray-400 text-sm">Tokens: {userTokenBalance.toFixed(2)} {tokenData?.token_symbol || tokenData?.symbol || ''}</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-gray-400 text-sm">Available: {userTokenBalance.toFixed(2)} {tokenData?.token_symbol || tokenData?.symbol || 'tokens'}</span>
+                        <span className="text-gray-400 text-sm">ALGO: {userAlgoBalance.toFixed(2)}</span>
+                      </>
+                    )}
                   </div>
                   <div className="grid grid-cols-4 gap-2 mt-3">
                     {[25, 50, 75, 100].map((percent) => (
@@ -1186,7 +1322,13 @@ const TradingMarketplace: React.FC = () => {
                         key={percent}
                         whileHover={{ scale: 1.05 }}
                         whileTap={{ scale: 0.95 }}
-                        onClick={() => setAmount((userAlgoBalance * (percent / 100) / currentPrice).toFixed(2))}
+                        onClick={() => {
+                          if (activeTab === 'buy') {
+                            setAmount((userAlgoBalance * (percent / 100) / currentPrice).toFixed(2))
+                          } else {
+                            setAmount((userTokenBalance * (percent / 100)).toFixed(2))
+                          }
+                        }}
                         className="px-2 py-2 bg-gradient-to-r from-primary-500/20 to-purple-500/20 hover:from-primary-500/30 hover:to-purple-500/30 rounded-lg text-sm text-white font-semibold transition-all border border-primary-500/30"
                       >
                         {percent}%

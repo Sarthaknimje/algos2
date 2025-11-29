@@ -190,10 +190,38 @@ const CreatorMarketplace: React.FC = () => {
     filterAndSortTokens()
   }, [filterAndSortTokens])
 
-  const formatNumber = (num: number) => {
-    if (num >= 1000000) return (num / 1000000).toFixed(2) + 'M'
-    if (num >= 1000) return (num / 1000).toFixed(2) + 'K'
-    return num.toLocaleString()
+  // ALGO to USD conversion rate (approximate)
+  const ALGO_TO_USD = 0.15
+
+  const formatNumber = (num: number | null | undefined, isAlgo: boolean = false) => {
+    // Handle invalid values
+    if (num === null || num === undefined || isNaN(num) || num === 0) return '$0.00'
+    
+    // Ensure num is a valid number
+    const validNum = Number(num)
+    if (isNaN(validNum) || validNum === 0) return '$0.00'
+    
+    // Convert ALGO to USD if needed
+    const usdValue = isAlgo ? validNum * ALGO_TO_USD : validNum
+    
+    // Ensure usdValue is valid
+    if (isNaN(usdValue) || usdValue === 0) return '$0.00'
+    
+    // Format with appropriate suffix (only use B for values >= 1 billion)
+    if (usdValue >= 1000000000) {
+      return '$' + (usdValue / 1000000000).toFixed(2) + 'B'
+    }
+    if (usdValue >= 1000000) {
+      return '$' + (usdValue / 1000000).toFixed(2) + 'M'
+    }
+    if (usdValue >= 1000) {
+      return '$' + (usdValue / 1000).toFixed(2) + 'K'
+    }
+    // For values less than $1000, show 2 decimal places if less than $1, otherwise no decimals
+    if (usdValue < 1) {
+      return '$' + usdValue.toFixed(4)
+    }
+    return '$' + usdValue.toFixed(2)
   }
 
   const formatPrice = (price: number) => {
@@ -342,7 +370,20 @@ const CreatorMarketplace: React.FC = () => {
           <div className="card text-center">
             <DollarSign className="w-8 h-8 text-green-400 mx-auto mb-3" />
             <div className="text-3xl font-bold text-white mb-1">
-              ${formatNumber(tokens.reduce((sum, token) => sum + token.market_cap, 0))}
+              {(() => {
+                const totalMarketCapAlgo = tokens.reduce((sum, token) => {
+                  // Calculate real-time market cap: current_price * total_supply (in ALGO)
+                  const price = Number(token.current_price) || 0
+                  const supply = Number(token.total_supply) || 0
+                  const marketCapAlgo = price * supply
+                  // Ensure we're not getting astronomical numbers
+                  if (isNaN(marketCapAlgo) || marketCapAlgo < 0 || marketCapAlgo > 1000000000) {
+                    return sum
+                  }
+                  return sum + marketCapAlgo
+                }, 0)
+                return formatNumber(totalMarketCapAlgo, true) // isAlgo = true, so convert to USD
+              })()}
             </div>
             <div className="text-gray-400 text-sm">Total Market Cap</div>
           </div>
@@ -350,15 +391,24 @@ const CreatorMarketplace: React.FC = () => {
           <div className="card text-center">
             <Users className="w-8 h-8 text-purple-400 mx-auto mb-3" />
             <div className="text-3xl font-bold text-white mb-1">
-              {formatNumber(tokens.reduce((sum, token) => sum + token.holders, 0))}
-          </div>
+              {tokens.reduce((sum, token) => sum + (token.holders || 0), 0).toLocaleString()}
+            </div>
             <div className="text-gray-400 text-sm">Total Holders</div>
           </div>
           
           <div className="card text-center">
             <TrendingUp className="w-8 h-8 text-violet-400 mx-auto mb-3" />
             <div className="text-3xl font-bold text-white mb-1">
-              ${formatNumber(tokens.reduce((sum, token) => sum + token.volume_24h, 0))}
+              {(() => {
+                const totalVolume = tokens.reduce((sum, token) => {
+                  const volume = Number(token.volume_24h) || 0
+                  if (isNaN(volume) || volume < 0 || volume > 1000000000) {
+                    return sum
+                  }
+                  return sum + volume
+                }, 0)
+                return formatNumber(totalVolume, true) // isAlgo = true, so convert to USD
+              })()}
             </div>
             <div className="text-gray-400 text-sm">24h Volume</div>
           </div>
@@ -519,11 +569,21 @@ const CreatorMarketplace: React.FC = () => {
               {/* Metrics */}
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   <div className="text-center p-3 bg-white/5 rounded-lg">
-                    <div className="text-lg font-bold text-white">${formatNumber(token.market_cap)}</div>
+                    <div className="text-lg font-bold text-white">
+                      {(() => {
+                        const price = Number(token.current_price) || 0
+                        const supply = Number(token.total_supply) || 0
+                        const marketCapAlgo = price * supply
+                        if (isNaN(marketCapAlgo) || marketCapAlgo < 0 || marketCapAlgo > 1000000000) {
+                          return '$0.00'
+                        }
+                        return formatNumber(marketCapAlgo, true) // isAlgo = true, convert to USD
+                      })()}
+                    </div>
                     <div className="text-gray-400 text-xs">Market Cap</div>
                   </div>
                   <div className="text-center p-3 bg-white/5 rounded-lg">
-                    <div className="text-lg font-bold text-white">{formatNumber(token.holders)}</div>
+                    <div className="text-lg font-bold text-white">{(token.holders || 0).toLocaleString()}</div>
                     <div className="text-gray-400 text-xs">Holders</div>
                   </div>
                   </div>

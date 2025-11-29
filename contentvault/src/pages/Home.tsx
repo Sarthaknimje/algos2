@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import { motion, useScroll, useTransform, useMotionValue, useSpring } from 'framer-motion'
 import { 
   Rocket, 
@@ -20,11 +20,12 @@ import {
   Lock,
   type LucideIcon
 } from 'lucide-react'
-import { YouTubeIcon, InstagramIcon, TwitterIcon, LinkedInIcon } from '../assets/icons'
+import { YouTubeIcon, InstagramIcon, TwitterIcon, LinkedInIcon, TokenIcon } from '../assets/icons'
 import PremiumBackground from '../components/PremiumBackground'
-import { ContentVaultLogo, BlockchainIllustration, TokenIllustration, CreatorIllustration } from '../components/svgs'
 
 const Home: React.FC = () => {
+  const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
   const { scrollYProgress } = useScroll()
   const y = useTransform(scrollYProgress, [0, 1], ['0%', '50%'])
   const opacity = useTransform(scrollYProgress, [0, 0.3], [1, 0])
@@ -34,6 +35,17 @@ const Home: React.FC = () => {
   const mouseY = useMotionValue(0)
   const rotateX = useSpring(useTransform(mouseY, [-0.5, 0.5], [7.5, -7.5]))
   const rotateY = useSpring(useTransform(mouseX, [-0.5, 0.5], [-7.5, 7.5]))
+  
+  // Handle referral code from URL
+  useEffect(() => {
+    const refCode = searchParams.get('ref')
+    if (refCode) {
+      // Store referral code in localStorage
+      localStorage.setItem('pending_referral_code', refCode)
+      // Redirect to referrals page to register
+      navigate('/referrals?register=true')
+    }
+  }, [searchParams, navigate])
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -178,30 +190,30 @@ const Home: React.FC = () => {
       {/* 3D Floating Elements */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         {/* Large 3D Orbs */}
-        <motion.div 
+          <motion.div 
           className="absolute top-20 left-10 w-96 h-96 rounded-full blur-3xl"
           style={{
             background: 'radial-gradient(circle, rgba(139, 92, 246, 0.3) 0%, transparent 70%)',
           }}
-          animate={{ 
+            animate={{ 
             x: [0, 100, 0],
             y: [0, 50, 0],
-            scale: [1, 1.2, 1],
-            rotate: [0, 180, 360]
-          }}
+              scale: [1, 1.2, 1],
+              rotate: [0, 180, 360]
+            }}
           transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
-        />
-        <motion.div 
+          />
+          <motion.div 
           className="absolute bottom-20 right-10 w-96 h-96 rounded-full blur-3xl"
           style={{
             background: 'radial-gradient(circle, rgba(217, 70, 239, 0.3) 0%, transparent 70%)',
           }}
-          animate={{ 
+            animate={{ 
             x: [0, -100, 0],
             y: [0, -50, 0],
-            scale: [1.2, 1, 1.2],
-            rotate: [360, 180, 0]
-          }}
+              scale: [1.2, 1, 1.2],
+              rotate: [360, 180, 0]
+            }}
           transition={{ duration: 25, repeat: Infinity, ease: "easeInOut" }}
         />
       </div>
@@ -237,7 +249,9 @@ const Home: React.FC = () => {
             className="mb-8 flex justify-center"
           >
             <div className="relative">
-              <ContentVaultLogo className="w-20 h-20 md:w-24 md:h-24" />
+              <div className="w-20 h-20 md:w-24 md:h-24 rounded-2xl bg-gradient-to-br from-violet-500 via-fuchsia-500 to-cyan-400 flex items-center justify-center shadow-2xl">
+                <span className="text-2xl md:text-3xl font-bold text-white">CV</span>
+              </div>
               <motion.div
                 className="absolute inset-0 bg-gradient-to-r from-violet-400 to-fuchsia-400 rounded-full blur-xl opacity-50"
                 animate={{ scale: [1, 1.2, 1], opacity: [0.5, 0.7, 0.5] }}
@@ -247,9 +261,9 @@ const Home: React.FC = () => {
           </motion.div>
 
           {/* Badge */}
-          <motion.div 
+            <motion.div
             initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
+              animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 backdrop-blur-sm mb-8"
           >
@@ -259,7 +273,7 @@ const Home: React.FC = () => {
           </motion.div>
 
           {/* Main Headline with 3D Effect */}
-          <motion.h1 
+              <motion.h1 
             className="text-5xl md:text-7xl lg:text-8xl font-bold tracking-tight mb-8"
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
@@ -270,7 +284,7 @@ const Home: React.FC = () => {
           >
             <span className="text-white">Own Your</span>
             <br />
-            <motion.span 
+                <motion.span 
               className="bg-gradient-to-r from-violet-400 via-fuchsia-400 to-cyan-400 bg-clip-text text-transparent inline-block"
             animate={{ 
                 backgroundPosition: ['0%', '100%', '0%'],
@@ -285,10 +299,10 @@ const Home: React.FC = () => {
               </motion.h1>
               
           {/* Subheadline */}
-          <motion.p 
+              <motion.p 
             className="text-xl md:text-2xl text-gray-400 max-w-3xl mx-auto mb-12 leading-relaxed"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.4 }}
           >
             Transform your content into tradeable tokens on Algorand blockchain.
@@ -296,7 +310,7 @@ const Home: React.FC = () => {
             <span className="text-white font-medium">Tokenize YouTube, Instagram, Twitter, LinkedIn.</span>
             <br />
             <span className="text-cyan-400">Earn 5% on every trade. Create prediction markets. Build your creator economy.</span>
-          </motion.p>
+              </motion.p>
 
           {/* Hero Illustration */}
           <motion.div
@@ -313,8 +327,9 @@ const Home: React.FC = () => {
                     transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
                     className="flex justify-center"
                   >
-                    <div className="w-32 h-32">
-                      <TokenIllustration className="w-full h-full" />
+                    <div className="w-32 h-32 rounded-3xl bg-gradient-to-br from-violet-500 via-fuchsia-500 to-cyan-400 flex flex-col items-center justify-center shadow-2xl">
+                      <BarChart3 className="w-8 h-8 text-white mb-1" />
+                      <span className="text-xs text-white/80">Creator Tokens</span>
                     </div>
                   </motion.div>
                   <motion.div
@@ -322,8 +337,9 @@ const Home: React.FC = () => {
                     transition={{ duration: 3, repeat: Infinity, ease: "easeInOut", delay: 0.5 }}
                     className="flex justify-center"
                   >
-                    <div className="w-32 h-32">
-                      <BlockchainIllustration className="w-full h-full" />
+                    <div className="w-32 h-32 rounded-3xl bg-gradient-to-br from-cyan-500 via-sky-500 to-violet-400 flex flex-col items-center justify-center shadow-2xl">
+                      <TrendingUp className="w-8 h-8 text-white mb-1" />
+                      <span className="text-xs text-white/80">Prediction Markets</span>
                     </div>
                   </motion.div>
                 </div>
@@ -411,13 +427,13 @@ const Home: React.FC = () => {
                     <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
                     <span className="text-xs text-green-400">{platform.status}</span>
                   </div>
-                </div>
+              </div>
               </motion.div>
             ))}
-          </motion.div>
+            </motion.div>
 
           {/* Live Stats Ticker - 3D Cards */}
-          <motion.div
+            <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 1.2 }}
@@ -426,7 +442,7 @@ const Home: React.FC = () => {
             {liveStats.map((stat, index) => {
               const Icon = stat.icon
               return (
-                  <motion.div 
+                <motion.div
                   key={stat.label}
                   ref={index === 0 ? cardRef : null}
                   className="group relative p-6 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-sm overflow-hidden"
@@ -454,10 +470,10 @@ const Home: React.FC = () => {
                     </div>
                   </div>
                   <div className="text-xs text-gray-500 relative z-10">{stat.label}</div>
-                </motion.div>
+                  </motion.div>
               )
             })}
-          </motion.div>
+                </motion.div>
 
           {/* Scroll indicator */}
           <motion.div
@@ -474,7 +490,7 @@ const Home: React.FC = () => {
               <span className="text-sm">Scroll to explore</span>
               <ChevronDown className="w-5 h-5" />
             </motion.div>
-          </motion.div>
+            </motion.div>
         </div>
       </section>
 
@@ -488,8 +504,8 @@ const Home: React.FC = () => {
             className="text-center mb-20"
           >
             <div className="flex justify-center mb-6">
-              <div className="w-32 h-32 md:w-40 md:h-40">
-                <CreatorIllustration className="w-full h-full" />
+              <div className="w-32 h-32 md:w-40 md:h-40 rounded-full bg-gradient-to-br from-violet-500 via-fuchsia-500 to-cyan-400 flex items-center justify-center shadow-2xl">
+                <Users className="w-10 h-10 text-white" />
               </div>
             </div>
             <h2 className="text-4xl md:text-6xl font-bold text-white mb-6">
@@ -511,9 +527,9 @@ const Home: React.FC = () => {
               <div className="flex items-center gap-3 mb-8">
                 <div className="p-3 rounded-xl bg-red-500/20 border border-red-500/30">
                   <TrendingDown className="w-6 h-6 text-red-500" />
-                </div>
+              </div>
                 <h3 className="text-2xl font-bold text-red-400">The Problems</h3>
-                </div>
+                  </div>
 
               {[
                 { title: 'Platforms Take 30-50%', desc: 'YouTube takes 45% commission. LinkedIn pays $0. Creators get pennies.', icon: DollarSign },
@@ -555,9 +571,9 @@ const Home: React.FC = () => {
               <div className="flex items-center gap-3 mb-8">
                 <div className="p-3 rounded-xl bg-green-500/20 border border-green-500/30">
                   <CheckCircle className="w-6 h-6 text-green-500" />
-                </div>
+              </div>
                 <h3 className="text-2xl font-bold text-green-400">Our Solution</h3>
-                </div>
+                  </div>
 
               {[
                 { title: 'Earn 5% on Every Trade', desc: 'Your fans buy & sell your tokens. You earn from every transaction. Keep 95% of value.', icon: DollarSign },
@@ -602,8 +618,8 @@ const Home: React.FC = () => {
             className="text-center mb-20"
           >
             <div className="flex justify-center mb-6">
-              <div className="w-48 h-32 md:w-64 md:h-40">
-                <BlockchainIllustration className="w-full h-full" />
+              <div className="w-48 h-32 md:w-64 md:h-40 rounded-3xl bg-gradient-to-br from-violet-500 via-fuchsia-500 to-cyan-400 flex items-center justify-center shadow-2xl">
+                <BarChart3 className="w-10 h-10 text-white" />
               </div>
             </div>
             <h2 className="text-4xl md:text-6xl font-bold text-white mb-6">
@@ -716,12 +732,12 @@ const Home: React.FC = () => {
                 >
                   <motion.div 
                     className="h-full p-6 md:p-8 rounded-3xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 hover:border-white/30 transition-all text-center group relative overflow-hidden backdrop-blur-sm"
-                    whileHover={{ 
+                  whileHover={{ 
                       y: -8,
-                      scale: 1.02,
+                    scale: 1.02,
                       borderColor: 'rgba(139, 92, 246, 0.4)'
-                    }}
-                  >
+                  }}
+                >
                     {/* Gradient glow on hover */}
                     <div className={`absolute inset-0 bg-gradient-to-br ${gradientClass}/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-3xl blur-xl`} />
                     
@@ -775,10 +791,10 @@ const Home: React.FC = () => {
                                 <PlatformIcon className="w-3.5 h-3.5 group-hover/badge:scale-110 transition-transform" />
                               )}
                               <span className="text-xs font-medium">{platform}</span>
-                            </motion.div>
-                          )
-                        })}
-                      </div>
+                </motion.div>
+              )
+            })}
+          </div>
                     )}
                     
                     {/* Decorative elements */}
@@ -791,14 +807,14 @@ const Home: React.FC = () => {
                         }}
                         transition={{ duration: 4, repeat: Infinity }}
                       >
-                        <div className="w-16 h-16 md:w-20 md:h-20 opacity-50">
-                          <TokenIllustration className="w-full h-full" />
+                        <div className="w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center opacity-70">
+                          <Coins className="w-8 h-8 text-white" />
                         </div>
                       </motion.div>
                     )}
-                    
+        
                     {index === 2 && (
-                      <motion.div 
+          <motion.div
                         className="mt-4 flex justify-center gap-1 relative z-10"
                         animate={{ y: [0, -5, 0] }}
                         transition={{ duration: 2, repeat: Infinity }}
@@ -834,15 +850,15 @@ const Home: React.FC = () => {
             <p className="text-xl text-gray-400 max-w-2xl mx-auto">
               Built on Algorand blockchain for creators and their communities.
             </p>
-          </motion.div>
-
+            </motion.div>
+            
           <div className="grid md:grid-cols-2 gap-8">
             {benefits.map((benefit, index) => (
           <motion.div 
                 key={benefit.title}
                 initial={{ opacity: 0, y: 30, rotateX: -15 }}
                 whileInView={{ opacity: 1, y: 0, rotateX: 0 }}
-                viewport={{ once: true }}
+              viewport={{ once: true }}
                 transition={{ delay: index * 0.2, type: "spring" }}
                 className="p-8 rounded-3xl bg-white/5 border border-white/10 hover:border-white/30 transition-all relative overflow-hidden group"
                 whileHover={{ 
@@ -863,7 +879,7 @@ const Home: React.FC = () => {
                       className="flex items-start gap-3 text-gray-300"
                       initial={{ opacity: 0, x: -20 }}
                       whileInView={{ opacity: 1, x: 0 }}
-                      viewport={{ once: true }}
+              viewport={{ once: true }}
                       transition={{ delay: index * 0.2 + i * 0.1 }}
                     >
                       <CheckCircle className={`w-5 h-5 mt-0.5 flex-shrink-0 bg-gradient-to-r ${benefit.color} bg-clip-text text-transparent`} />
@@ -882,7 +898,7 @@ const Home: React.FC = () => {
         <div className="max-w-5xl mx-auto text-center">
           {/* Glow effect */}
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <motion.div
+            <motion.div 
               className="w-[600px] h-[600px] bg-gradient-to-r from-violet-600/20 to-fuchsia-600/20 rounded-full blur-[120px]"
               animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0.5, 0.3] }}
               transition={{ duration: 8, repeat: Infinity }}
@@ -892,7 +908,7 @@ const Home: React.FC = () => {
           <motion.div
             initial={{ opacity: 0, y: 50, rotateX: -15 }}
             whileInView={{ opacity: 1, y: 0, rotateX: 0 }}
-            viewport={{ once: true }}
+              viewport={{ once: true }}
             className="relative z-10 p-12 rounded-[40px] bg-gradient-to-r from-white/5 to-white/10 border border-white/20 backdrop-blur-xl group"
             whileHover={{ 
               y: -10,
@@ -909,11 +925,11 @@ const Home: React.FC = () => {
               whileHover={{ rotateY: 360, scale: 1.1 }}
               style={{ transformStyle: 'preserve-3d' }}
             >
-              <div style={{ transform: 'translateZ(30px)' }} className="w-20 h-20">
-                <TokenIllustration className="w-full h-full" />
+              <div style={{ transform: 'translateZ(30px)' }} className="w-20 h-20 rounded-2xl bg-black/20 flex items-center justify-center">
+                <TokenIcon className="w-10 h-10 text-white" />
               </div>
             </motion.div>
-            
+              
             <h2 className="text-4xl md:text-6xl font-bold text-white mb-6">
               Ready to Own Your <br />
               <span className="bg-gradient-to-r from-violet-400 via-fuchsia-400 to-cyan-400 bg-clip-text text-transparent">
@@ -951,14 +967,14 @@ const Home: React.FC = () => {
                 <motion.button
                   className="px-10 py-5 border-2 border-white/20 rounded-2xl text-white font-bold text-lg hover:bg-white/5 transition-colors backdrop-blur-sm"
                   whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
+                whileTap={{ scale: 0.95 }}
                 >
                   <span className="flex items-center gap-3">
                     <BarChart3 className="w-6 h-6" />
                     View Dashboard
                   </span>
                 </motion.button>
-              </Link>
+                </Link>
 
               <Link to="/predictions">
                 <motion.button

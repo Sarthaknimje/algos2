@@ -402,7 +402,14 @@ const PredictionMarket: React.FC = () => {
             fetchPredictions()
           }, 3000)
         } catch (walletError: any) {
-          setTradeError(`Wallet error: ${walletError.message}`)
+          console.error('Wallet error:', walletError)
+          
+          // Handle network mismatch error specifically
+          if (walletError?.name === 'NetworkMismatchError' || walletError?.message?.includes('Network mismatch') || walletError?.message?.includes('different networks')) {
+            setTradeError('⚠️ Network Mismatch!\n\nPlease ensure your Pera Wallet is set to TESTNET.\n\nTo fix:\n1. Open Pera Wallet app\n2. Go to Settings\n3. Switch to Testnet\n4. Try again')
+          } else {
+            setTradeError(`Wallet error: ${walletError.message}`)
+          }
         }
       } else {
         setTradeError(data.error || 'Failed to place trade')

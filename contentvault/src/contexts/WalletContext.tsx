@@ -43,7 +43,14 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     setIsLoading(true)
     try {
-      // Open Pera Wallet modal
+      // Disconnect any existing session first to avoid network mismatch
+      try {
+        await peraWallet.disconnect()
+      } catch (e) {
+        // Ignore disconnect errors
+      }
+
+      // Open Pera Wallet modal with explicit testnet configuration
       const accounts = await peraWallet.connect()
 
       // Setup disconnect listener
@@ -54,8 +61,15 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       setAddress(accounts[0])
       setIsConnectedToPeraWallet(true)
       await fetchBalance(accounts[0])
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error connecting to Pera Wallet:', error)
+      
+      // Handle network mismatch error specifically
+      if (error?.message?.includes('Network mismatch') || error?.message?.includes('different networks')) {
+        alert('⚠️ Network Mismatch!\n\nPlease ensure your Pera Wallet is set to TESTNET.\n\nTo fix:\n1. Open Pera Wallet app\n2. Go to Settings\n3. Switch to Testnet\n4. Try connecting again')
+      } else if (error?.message) {
+        alert(`Connection Error: ${error.message}`)
+      }
     } finally {
       setIsLoading(false)
     }
@@ -95,8 +109,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   // 🚀 INITIALIZE on mount
   useEffect(() => {
+    // Create Pera Wallet instance with explicit testnet configuration
     const peraWalletInstance = new PeraWalletConnect({
-      chainId: 416002 // TestNet
+      chainId: 416002, // Algorand Testnet
+      // Explicitly set to testnet
+      shouldShowSignTxnToast: true
     })
     setPeraWallet(peraWalletInstance)
 

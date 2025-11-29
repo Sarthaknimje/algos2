@@ -273,6 +273,46 @@ def init_db():
         cursor.execute('ALTER TABLE trades ADD COLUMN total_value REAL DEFAULT 0')
     except sqlite3.OperationalError:
         pass  # Column already exists
+    try:
+        cursor.execute('ALTER TABLE trades ADD COLUMN referral_code TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cursor.execute('ALTER TABLE trades ADD COLUMN referral_earnings REAL DEFAULT 0')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    
+    # Create referrals table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS referrals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            referrer_address TEXT NOT NULL,
+            referred_address TEXT NOT NULL UNIQUE,
+            referral_code TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            total_earnings REAL DEFAULT 0,
+            total_trades_count INTEGER DEFAULT 0,
+            total_volume REAL DEFAULT 0
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals (referrer_address)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_referrals_referred ON referrals (referred_address)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_referrals_code ON referrals (referral_code)')
+    
+    # Create referral_earnings table for detailed tracking
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS referral_earnings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            referrer_address TEXT NOT NULL,
+            referred_address TEXT NOT NULL,
+            trade_id INTEGER NOT NULL,
+            earnings REAL NOT NULL,
+            trade_value REAL NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (trade_id) REFERENCES trades (id)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_referral_earnings_referrer ON referral_earnings (referrer_address)')
     
     # Add bonding curve columns if they don't exist
     try:
@@ -412,6 +452,16 @@ def init_db():
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_copy_profiles_leader ON copy_profiles (leader_address)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_copy_profiles_follower ON copy_profiles (follower_address)')
+    
+    # Migrate copy_profiles table - add risk_level column if it doesn't exist
+    try:
+        cursor.execute('PRAGMA table_info(copy_profiles)')
+        columns = [col[1] for col in cursor.fetchall()]
+        if 'risk_level' not in columns:
+            cursor.execute('ALTER TABLE copy_profiles ADD COLUMN risk_level TEXT DEFAULT "balanced"')
+            conn.commit()
+    except Exception as e:
+        logger.warning(f"Migration warning for copy_profiles: {e}")
 
     # Create bot strategies table
     cursor.execute('''
@@ -429,6 +479,25 @@ def init_db():
         )
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_bot_strategies_owner ON bot_strategies (owner_address)')
+    
+    # Strategy executions table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS strategy_executions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            strategy_id INTEGER NOT NULL,
+            trader_address TEXT NOT NULL,
+            asa_id INTEGER NOT NULL,
+            trade_type TEXT NOT NULL,
+            amount REAL NOT NULL,
+            price REAL NOT NULL,
+            total_value REAL NOT NULL,
+            pnl REAL DEFAULT 0,
+            executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (strategy_id) REFERENCES bot_strategies(id)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_strategy_executions_strategy ON strategy_executions (strategy_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_strategy_executions_trader ON strategy_executions (trader_address)')
 
     conn.close()
     
@@ -631,11 +700,11 @@ def youtube_callback():
         # Store credentials in database for persistence across restarts
         session_id = f"yt_session_{secrets.token_hex(8)}"
         credentials_data = {
-            'token': credentials.token,
-            'refresh_token': credentials.refresh_token,
-            'token_uri': credentials.token_uri,
-            'client_id': credentials.client_id,
-            'client_secret': credentials.client_secret,
+                'token': credentials.token,
+                'refresh_token': credentials.refresh_token,
+                'token_uri': credentials.token_uri,
+                'client_id': credentials.client_id,
+                'client_secret': credentials.client_secret,
             'scopes': list(credentials.scopes) if credentials.scopes else []
         }
         
@@ -722,6 +791,35 @@ def youtube_auth_status():
             "authenticated": False,
             "error": str(e)
         }), 500
+
+@app.route('/api/linkedin/profile', methods=['POST'])
+@cross_origin(supports_credentials=True)
+def get_linkedin_profile():
+    """Get LinkedIn profile followers count"""
+    try:
+        data = request.get_json()
+        profile_url = data.get('profile_url')
+        
+        if not profile_url:
+            return jsonify({"success": False, "error": "profile_url is required"}), 400
+        
+        scraper = WebScraper()
+        profile_data = scraper.scrape_linkedin_profile(profile_url)
+        
+        if profile_data:
+            return jsonify({
+                "success": True,
+                "profile": profile_data
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": "Could not fetch LinkedIn profile data"
+            }), 404
+            
+    except Exception as e:
+        logger.error(f"Error fetching LinkedIn profile: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/auth/youtube/channel', methods=['GET'])
 def get_youtube_channel():
@@ -1392,15 +1490,20 @@ def get_tokens():
         tokens = []
         for row in cursor.fetchall():
             token_dict = dict(zip(columns, row))
+            current_price = float(token_dict.get('current_price', 0) or 0)
+            total_supply = float(token_dict.get('total_supply', 0) or 0)
+            # Always calculate real market cap: current_price * total_supply (real-time, not stored value)
+            real_market_cap = current_price * total_supply
+            
             tokens.append({
                 "asa_id": token_dict.get('asa_id', 0),
                 "creator": token_dict.get('creator', ''),
                 "creator_address": token_dict.get('creator', ''),
                 "token_name": token_dict.get('token_name', ''),
                 "token_symbol": token_dict.get('token_symbol', ''),
-                "total_supply": token_dict.get('total_supply', 0),
-                "current_price": token_dict.get('current_price', 0),
-                "market_cap": token_dict.get('market_cap', 0),
+                "total_supply": total_supply,
+                "current_price": current_price,
+                "market_cap": real_market_cap,  # Real market cap
                 "volume_24h": token_dict.get('volume_24h', 0),
                 "holders": token_dict.get('holders', 0),
                 "price_change_24h": token_dict.get('price_change_24h', 0),
@@ -1593,6 +1696,257 @@ def copy_trading_trader_pnl(address):
     return jsonify({
         "success": True,
         "points": points
+    })
+
+@app.route('/api/copy-trading/trader/<address>/analytics', methods=['GET'])
+@handle_errors
+def copy_trading_trader_analytics(address):
+    """
+    Comprehensive trader analytics similar to GMGN.AI
+    Calculates win rate, P&L distribution, token distribution, etc.
+    """
+    conn = sqlite3.connect('creatorvault.db')
+    cursor = conn.cursor()
+
+    # Get all trades for this trader
+    cursor.execute('''
+        SELECT 
+            t.trade_type,
+            t.amount,
+            t.price,
+            t.total_value,
+            t.created_at,
+            t.transaction_id,
+            t.asa_id,
+            tk.token_name,
+            tk.token_symbol,
+            tk.current_price,
+            tk.market_cap
+        FROM trades t
+        LEFT JOIN tokens tk ON t.asa_id = tk.asa_id
+        WHERE t.trader_address = ?
+        ORDER BY t.created_at DESC
+    ''', (address,))
+
+    all_trades = cursor.fetchall()
+    
+    # Calculate 7D metrics
+    from datetime import datetime, timedelta
+    seven_days_ago = datetime.now() - timedelta(days=7)
+    
+    trades_7d = []
+    for t in all_trades:
+        try:
+            # Handle different datetime formats
+            trade_time_str = t[4]
+            if 'T' in trade_time_str:
+                # ISO format: 2025-11-27T14:08:30 or 2025-11-27T14:08:30.123456
+                trade_time_str = trade_time_str.split('.')[0]  # Remove microseconds
+                if '+' not in trade_time_str and 'Z' not in trade_time_str:
+                    trade_time_str += '+00:00'
+                elif 'Z' in trade_time_str:
+                    trade_time_str = trade_time_str.replace('Z', '+00:00')
+                trade_time = datetime.fromisoformat(trade_time_str)
+            else:
+                # SQLite format: 2025-11-27 14:08:30
+                trade_time = datetime.strptime(trade_time_str, '%Y-%m-%d %H:%M:%S')
+            
+            if trade_time >= seven_days_ago:
+                trades_7d.append(t)
+        except Exception as e:
+            logger.warning(f"Could not parse trade time {t[4]}: {e}")
+            # Include it anyway if we can't parse
+            trades_7d.append(t)
+    
+    # Calculate realized P&L per token
+    token_pnl = {}
+    token_buys = {}
+    token_sells = {}
+    
+    for trade in all_trades:
+        asa_id = trade[6]
+        trade_type = trade[0]
+        total_value = trade[3] or 0
+        
+        if asa_id not in token_pnl:
+            token_pnl[asa_id] = 0
+            token_buys[asa_id] = 0
+            token_sells[asa_id] = 0
+        
+        if trade_type == 'buy':
+            token_buys[asa_id] += total_value
+            token_pnl[asa_id] -= total_value
+        else:  # sell
+            token_sells[asa_id] += total_value
+            token_pnl[asa_id] += total_value
+    
+    # Calculate win rate (tokens with positive P&L)
+    winning_tokens = sum(1 for pnl in token_pnl.values() if pnl > 0)
+    total_tokens_traded = len(token_pnl)
+    win_rate = (winning_tokens / total_tokens_traded * 100) if total_tokens_traded > 0 else 0
+    
+    # 7D metrics
+    buys_7d = sum(t[3] or 0 for t in trades_7d if t[0] == 'buy')
+    sells_7d = sum(t[3] or 0 for t in trades_7d if t[0] == 'sell')
+    sell_count_7d = len([t for t in trades_7d if t[0] == 'sell'])
+    realized_pnl_7d = sells_7d - buys_7d
+    pnl_pct_7d = (realized_pnl_7d / buys_7d * 100) if buys_7d > 0 else 0
+    
+    # Total P&L
+    total_buys = sum(token_buys.values())
+    total_sells = sum(token_sells.values())
+    total_pnl = total_sells - total_buys
+    total_pnl_pct = (total_pnl / total_buys * 100) if total_buys > 0 else 0
+    
+    # Calculate average duration (simplified - time between first buy and last sell per token)
+    token_durations = []
+    for asa_id in token_pnl.keys():
+        token_trades = [t for t in all_trades if t[6] == asa_id]
+        if len(token_trades) >= 2:
+            first_trade = min(token_trades, key=lambda x: x[4])
+            last_trade = max(token_trades, key=lambda x: x[4])
+            try:
+                first_time = datetime.fromisoformat(first_trade[4].replace('Z', '+00:00').split('.')[0])
+                last_time = datetime.fromisoformat(last_trade[4].replace('Z', '+00:00').split('.')[0])
+                duration = (last_time - first_time).total_seconds() / 60  # minutes
+                token_durations.append(duration)
+            except:
+                pass
+    
+    avg_duration_min = sum(token_durations) / len(token_durations) if token_durations else 0
+    
+    # P&L distribution (calculate ROI per token)
+    pnl_distribution = {
+        'gt_500': 0,
+        '200_500': 0,
+        '0_200': 0,
+        'neg_50_0': 0,
+        'lt_neg_50': 0
+    }
+    
+    for asa_id, pnl in token_pnl.items():
+        buy_amount = token_buys.get(asa_id, 0)
+        if buy_amount > 0:
+            roi_pct = (pnl / buy_amount) * 100
+            if roi_pct > 500:
+                pnl_distribution['gt_500'] += 1
+            elif roi_pct >= 200:
+                pnl_distribution['200_500'] += 1
+            elif roi_pct > 0:
+                pnl_distribution['0_200'] += 1
+            elif roi_pct >= -50:
+                pnl_distribution['neg_50_0'] += 1
+            else:
+                pnl_distribution['lt_neg_50'] += 1
+    
+    # Get actual holdings from Algorand blockchain
+    holdings = []
+    unrealized_total = 0
+    try:
+        account_info = algod_client.account_info(address)
+        assets = account_info.get('assets', [])
+        
+        # Get token info from database
+        cursor.execute('SELECT asa_id, token_name, token_symbol, current_price, market_cap FROM tokens')
+        token_info_map = {row[0]: row for row in cursor.fetchall()}
+        
+        for asset in assets:
+            asa_id = asset['asset-id']
+            # Get decimals from asset info or default to 6
+            try:
+                asset_info = algod_client.asset_info(asa_id)
+                decimals = asset_info['params'].get('decimals', 6)
+            except:
+                decimals = 6
+            balance = asset['amount'] / (10 ** decimals)  # Convert to token units
+            
+            if balance > 0:
+                # Get token info from database or use defaults
+                if asa_id in token_info_map:
+                    token_info = token_info_map[asa_id]
+                    current_price = token_info[3] or 0
+                    market_cap = token_info[4] or 0
+                    token_name = token_info[1] or f"Token {asa_id}"
+                    token_symbol = token_info[2] or f"ASA{asa_id}"
+                else:
+                    # Token not in our database, use defaults
+                    current_price = 0
+                    market_cap = 0
+                    token_name = f"Token {asa_id}"
+                    token_symbol = f"ASA{asa_id}"
+                
+                total_value = balance * current_price
+                
+                # Calculate average buy price for this token
+                token_buy_trades = [t for t in all_trades if t[6] == asa_id and t[0] == 'buy']
+                if token_buy_trades and len(token_buy_trades) > 0:
+                    total_buy_value = sum(t[3] or 0 for t in token_buy_trades)
+                    total_buy_amount = sum(t[1] for t in token_buy_trades)
+                    if total_buy_amount > 0 and current_price > 0:
+                        avg_buy_price = total_buy_value / total_buy_amount
+                        # Only calculate if we have valid prices
+                        if avg_buy_price > 0 and current_price > 0:
+                            unrealized_pnl = (current_price - avg_buy_price) * balance
+                            unrealized_total += unrealized_pnl
+                        else:
+                            unrealized_pnl = 0
+                    else:
+                        unrealized_pnl = 0
+                else:
+                    unrealized_pnl = 0
+                
+                holdings.append({
+                    "asa_id": asa_id,
+                    "token_name": token_name,
+                    "token_symbol": token_symbol,
+                    "current_price": current_price,
+                    "market_cap": market_cap,
+                    "amount": balance,
+                    "total_value": total_value,
+                    "unrealized_pnl": unrealized_pnl
+                })
+    except Exception as e:
+        logger.warning(f"Could not fetch on-chain holdings for {address}: {e}")
+        # Fallback to trade-based calculation
+        for asa_id, pnl in token_pnl.items():
+            if token_buys.get(asa_id, 0) > token_sells.get(asa_id, 0):
+                token_info = next((t for t in all_trades if t[6] == asa_id), None)
+                if token_info:
+                    holdings.append({
+                        "asa_id": asa_id,
+                        "token_name": token_info[7] or f"Token {asa_id}",
+                        "token_symbol": token_info[8] or f"ASA{asa_id}",
+                        "current_price": token_info[9] or 0,
+                        "market_cap": token_info[10] or 0,
+                        "amount": (token_buys.get(asa_id, 0) - token_sells.get(asa_id, 0)) / (token_info[9] or 1),
+                        "total_value": token_buys.get(asa_id, 0) - token_sells.get(asa_id, 0),
+                        "unrealized_pnl": 0
+                    })
+    
+    conn.close()
+    
+    return jsonify({
+        "success": True,
+        "analytics": {
+            "realized_pnl_7d": realized_pnl_7d,
+            "realized_pnl_7d_pct": pnl_pct_7d,
+            "win_rate": win_rate,
+            "total_pnl": total_pnl,
+            "total_pnl_pct": total_pnl_pct,
+            "unrealized_profits": unrealized_total,
+            "trades_7d": len(trades_7d),
+            "tokens_traded_7d": len(set(t[6] for t in trades_7d)),
+            "avg_duration_min": avg_duration_min,
+            "total_cost_7d": buys_7d,
+            "avg_cost": buys_7d / len(trades_7d) if trades_7d and len(trades_7d) > 0 else 0,
+            "avg_sold": sells_7d / sell_count_7d if sell_count_7d > 0 else 0,
+            "avg_realized_profits": realized_pnl_7d / sell_count_7d if sell_count_7d > 0 else 0,
+            "fees_7d": sum(t[3] or 0 for t in trades_7d) * 0.02,  # 2% platform fee estimate
+            "volume_7d": buys_7d + sells_7d,
+            "total_tokens_traded": total_tokens_traded,
+            "pnl_distribution": pnl_distribution,
+            "holdings": holdings[:20]  # Top 20 holdings
+        }
     })
 
 @app.route('/api/copy-trading/trader/<address>/trades', methods=['GET'])
@@ -1832,6 +2186,311 @@ def bot_strategies():
         "strategies": strategies
     })
 
+@app.route('/api/bot-strategies/<int:strategy_id>/executions', methods=['GET'])
+@handle_errors
+def get_strategy_executions(strategy_id):
+    """Get all trades executed by a strategy"""
+    conn = sqlite3.connect('creatorvault.db')
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT 
+            se.id,
+            se.trader_address,
+            se.asa_id,
+            se.trade_type,
+            se.amount,
+            se.price,
+            se.total_value,
+            se.pnl,
+            se.executed_at,
+            t.token_name,
+            t.token_symbol
+        FROM strategy_executions se
+        LEFT JOIN tokens t ON se.asa_id = t.asa_id
+        WHERE se.strategy_id = ?
+        ORDER BY se.executed_at DESC
+        LIMIT 100
+    ''', (strategy_id,))
+    
+    rows = cursor.fetchall()
+    conn.close()
+    
+    executions = []
+    total_pnl = 0
+    for row in rows:
+        executions.append({
+            "id": row[0],
+            "trader_address": row[1],
+            "asa_id": row[2],
+            "trade_type": row[3],
+            "amount": row[4],
+            "price": row[5],
+            "total_value": row[6],
+            "pnl": row[7] or 0,
+            "executed_at": row[8],
+            "token_name": row[9] or f"Token {row[2]}",
+            "token_symbol": row[10] or f"ASA{row[2]}"
+        })
+        total_pnl += row[7] or 0
+    
+    return jsonify({
+        "success": True,
+        "executions": executions,
+        "total_executions": len(executions),
+        "total_pnl": total_pnl
+    })
+
+@app.route('/api/bot-strategies/<int:strategy_id>/execute', methods=['POST'])
+@cross_origin(supports_credentials=True)
+@handle_errors
+def execute_strategy(strategy_id):
+    """Execute a strategy trade (called from frontend after Pera Wallet confirmation)"""
+    data = request.get_json()
+    trader_address = data.get('trader_address')
+    asa_id = data.get('asa_id')
+    trade_type = data.get('trade_type')  # 'buy' or 'sell'
+    amount = data.get('amount')
+    price = data.get('price')
+    total_value = data.get('total_value')
+    
+    if not all([trader_address, asa_id, trade_type, amount, price, total_value]):
+        return jsonify({"success": False, "error": "Missing required fields"}), 400
+    
+    conn = sqlite3.connect('creatorvault.db')
+    cursor = conn.cursor()
+    
+    # Record the execution
+    cursor.execute('''
+        INSERT INTO strategy_executions
+        (strategy_id, trader_address, asa_id, trade_type, amount, price, total_value, pnl)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+    ''', (strategy_id, trader_address, asa_id, trade_type, amount, price, total_value))
+    
+    conn.commit()
+    conn.close()
+    
+    return jsonify({
+        "success": True,
+        "message": "Strategy execution recorded"
+    })
+
+@app.route('/api/referrals/generate-code', methods=['POST'])
+@handle_errors
+def generate_referral_code():
+    """Generate a unique referral code for a user"""
+    data = request.get_json()
+    referrer_address = data.get('referrer_address')
+    
+    if not referrer_address:
+        return jsonify({"success": False, "error": "referrer_address is required"}), 400
+    
+    import secrets
+    import string
+    
+    conn = sqlite3.connect('creatorvault.db')
+    cursor = conn.cursor()
+    
+    # Check if user already has a code
+    cursor.execute('SELECT referral_code FROM referrals WHERE referrer_address = ? AND referrer_address = referred_address LIMIT 1', (referrer_address,))
+    existing = cursor.fetchone()
+    if existing:
+        conn.close()
+        return jsonify({
+            "success": True,
+            "referral_code": existing[0]
+        })
+    
+    # Generate 8-character alphanumeric code
+    code = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
+    
+    # Check if code already exists
+    cursor.execute('SELECT id FROM referrals WHERE referral_code = ?', (code,))
+    while cursor.fetchone():
+        code = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
+        cursor.execute('SELECT id FROM referrals WHERE referral_code = ?', (code,))
+    
+    # Create self-referral entry for code generation
+    cursor.execute('''
+        INSERT INTO referrals (referrer_address, referred_address, referral_code, total_earnings, total_trades_count, total_volume)
+        VALUES (?, ?, ?, 0, 0, 0)
+    ''', (referrer_address, referrer_address, code))
+    
+    conn.commit()
+    conn.close()
+    
+    return jsonify({
+        "success": True,
+        "referral_code": code
+    })
+
+@app.route('/api/referrals/register', methods=['POST'])
+@handle_errors
+def register_referral():
+    """Register a new referral relationship"""
+    data = request.get_json()
+    referral_code = data.get('referral_code')
+    referred_address = data.get('referred_address')
+    
+    if not referral_code or not referred_address:
+        return jsonify({"success": False, "error": "referral_code and referred_address are required"}), 400
+    
+    conn = sqlite3.connect('creatorvault.db')
+    cursor = conn.cursor()
+    
+    # Check if already referred
+    cursor.execute('SELECT id FROM referrals WHERE referred_address = ?', (referred_address,))
+    if cursor.fetchone():
+        conn.close()
+        return jsonify({"success": False, "error": "Address already has a referrer"}), 400
+    
+    # Find referrer by code (look for someone who has this code as their own)
+    cursor.execute('SELECT referrer_address FROM referrals WHERE referral_code = ? AND referrer_address = referred_address LIMIT 1', (referral_code,))
+    referrer_row = cursor.fetchone()
+    
+    if not referrer_row:
+        conn.close()
+        return jsonify({"success": False, "error": "Invalid referral code"}), 400
+    
+    referrer_address = referrer_row[0]
+    
+    # Don't allow self-referral
+    if referrer_address == referred_address:
+        conn.close()
+        return jsonify({"success": False, "error": "Cannot refer yourself"}), 400
+    
+    # Register the referral
+    cursor.execute('''
+        INSERT INTO referrals (referrer_address, referred_address, referral_code, total_earnings, total_trades_count, total_volume)
+        VALUES (?, ?, ?, 0, 0, 0)
+    ''', (referrer_address, referred_address, referral_code))
+    
+    conn.commit()
+    conn.close()
+    
+    return jsonify({
+        "success": True,
+        "referrer_address": referrer_address,
+        "message": "Referral registered successfully"
+    })
+
+@app.route('/api/referrals/earnings/<address>', methods=['GET'])
+@handle_errors
+def get_referral_earnings(address):
+    """Get referral earnings for a referrer"""
+    conn = sqlite3.connect('creatorvault.db')
+    cursor = conn.cursor()
+    
+    # Get total earnings from referral_earnings table (more accurate)
+    cursor.execute('''
+        SELECT 
+            COALESCE(SUM(earnings), 0) as total_earnings,
+            COUNT(DISTINCT trade_id) as total_trades,
+            COALESCE(SUM(trade_value), 0) as total_volume,
+            COUNT(DISTINCT referred_address) as total_referrals
+        FROM referral_earnings
+        WHERE referrer_address = ?
+    ''', (address,))
+    
+    row = cursor.fetchone()
+    total_earnings = row[0] or 0
+    total_trades = row[1] or 0
+    total_volume = row[2] or 0
+    total_referrals = row[3] or 0
+    
+    # Get referral code (where user is the referrer and has their own code)
+    cursor.execute('SELECT referral_code FROM referrals WHERE referrer_address = ? AND referrer_address = referred_address LIMIT 1', (address,))
+    code_row = cursor.fetchone()
+    referral_code = code_row[0] if code_row else None
+    
+    # Get detailed earnings
+    cursor.execute('''
+        SELECT 
+            re.referred_address,
+            re.earnings,
+            re.trade_value,
+            re.created_at,
+            COALESCE(tokens.token_symbol, 'N/A') as token_symbol,
+            COALESCE(t.trade_type, 'N/A') as trade_type
+        FROM referral_earnings re
+        LEFT JOIN trades t ON re.trade_id = t.id
+        LEFT JOIN tokens ON t.asa_id = tokens.asa_id
+        WHERE re.referrer_address = ?
+        ORDER BY re.created_at DESC
+        LIMIT 100
+    ''', (address,))
+    
+    earnings_history = []
+    for row in cursor.fetchall():
+        earnings_history.append({
+            "referred_address": row[0],
+            "earnings": row[1] or 0,
+            "trade_value": row[2] or 0,
+            "created_at": row[3],
+            "token_symbol": row[4] or "N/A",
+            "trade_type": row[5] or "N/A"
+        })
+    
+    # Get list of referrals with aggregated stats from referral_earnings
+    cursor.execute('''
+        SELECT 
+            re.referred_address,
+            COALESCE(SUM(re.earnings), 0) as total_earnings,
+            COUNT(DISTINCT re.trade_id) as total_trades,
+            COALESCE(SUM(re.trade_value), 0) as total_volume,
+            MIN(re.created_at) as joined_at
+        FROM referral_earnings re
+        WHERE re.referrer_address = ?
+        GROUP BY re.referred_address
+        ORDER BY joined_at DESC
+    ''', (address,))
+    
+    referrals_list = []
+    for row in cursor.fetchall():
+        referrals_list.append({
+            "referred_address": row[0],
+            "total_earnings": row[1] or 0,
+            "total_trades": row[2] or 0,
+            "total_volume": row[3] or 0,
+            "joined_at": row[4]
+        })
+    
+    # If no referrals from earnings table, check referrals table for registered users
+    if not referrals_list:
+        cursor.execute('''
+            SELECT 
+                referred_address,
+                COALESCE(total_earnings, 0) as total_earnings,
+                COALESCE(total_trades_count, 0) as total_trades,
+                COALESCE(total_volume, 0) as total_volume,
+                created_at as joined_at
+            FROM referrals
+            WHERE referrer_address = ? AND referred_address != referrer_address
+            ORDER BY created_at DESC
+        ''', (address,))
+        
+        for row in cursor.fetchall():
+            referrals_list.append({
+                "referred_address": row[0],
+                "total_earnings": row[1] or 0,
+                "total_trades": row[2] or 0,
+                "total_volume": row[3] or 0,
+                "joined_at": row[4]
+            })
+    
+    conn.close()
+    
+    return jsonify({
+        "success": True,
+        "referral_code": referral_code,
+        "total_earnings": total_earnings,
+        "total_trades": total_trades,
+        "total_volume": total_volume,
+        "total_referrals": total_referrals,
+        "earnings_history": earnings_history,
+        "referrals": referrals_list
+    })
+
 @app.route('/api/token/<int:asa_id>', methods=['GET'])
 @handle_errors
 def get_token_details(asa_id):
@@ -2007,9 +2666,27 @@ def bonding_curve_buy():
         # Calculate trading fees (5% creator fee, 2% platform fee)
         CREATOR_FEE_RATE = 0.05  # 5%
         PLATFORM_FEE_RATE = 0.02  # 2%
+        REFERRAL_FEE_RATE = 0.0001  # 0.01%
         total_value = result['algo_cost']
         creator_fee = total_value * CREATOR_FEE_RATE
         platform_fee = total_value * PLATFORM_FEE_RATE
+        
+        # Check for referral and calculate referral earnings
+        referral_earnings = 0
+        referral_code = None
+        cursor.execute('SELECT referrer_address, referral_code FROM referrals WHERE referred_address = ?', (trader_address,))
+        referral_row = cursor.fetchone()
+        if referral_row:
+            referrer_address, referral_code = referral_row
+            referral_earnings = total_value * REFERRAL_FEE_RATE
+            # Update referral stats
+            cursor.execute('''
+                UPDATE referrals 
+                SET total_earnings = total_earnings + ?,
+                    total_trades_count = total_trades_count + 1,
+                    total_volume = total_volume + ?
+                WHERE referred_address = ?
+            ''', (referral_earnings, total_value, trader_address))
         
         # Get creator address from token
         cursor.execute('SELECT creator FROM tokens WHERE asa_id = ?', (asa_id,))
@@ -2053,8 +2730,16 @@ def bonding_curve_buy():
         
         cursor.execute('UPDATE tokens SET bonding_curve_state = ?, current_price = ?, market_cap = ? WHERE asa_id = ?',
                       (json.dumps(new_state.to_dict()), result['new_price'], result['new_supply'] * result['new_price'], asa_id))
-        cursor.execute('INSERT INTO trades (asa_id, trader_address, trade_type, amount, price, transaction_id, creator_fee, platform_fee, total_value) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                      (asa_id, trader_address, 'buy', token_amount, result['new_price'], data.get('transaction_id', ''), creator_fee, platform_fee, total_value))
+        cursor.execute('INSERT INTO trades (asa_id, trader_address, trade_type, amount, price, transaction_id, creator_fee, platform_fee, total_value, referral_code, referral_earnings) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                      (asa_id, trader_address, 'buy', token_amount, result['new_price'], data.get('transaction_id', ''), creator_fee, platform_fee, total_value, referral_code, referral_earnings))
+        
+        # Record referral earnings if applicable
+        if referral_row and referral_earnings > 0:
+            trade_id = cursor.lastrowid
+            cursor.execute('''
+                INSERT INTO referral_earnings (referrer_address, referred_address, trade_id, earnings, trade_value)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (referrer_address, trader_address, trade_id, referral_earnings, total_value))
         
         conn.commit()
         conn.close()
@@ -2114,10 +2799,35 @@ def bonding_curve_sell():
         creator_fee = total_value * CREATOR_FEE_RATE
         platform_fee = total_value * PLATFORM_FEE_RATE
         
+        # Check for referral and calculate referral earnings
+        referral_earnings = 0
+        referral_code = None
+        cursor.execute('SELECT referrer_address, referral_code FROM referrals WHERE referred_address = ?', (trader_address,))
+        referral_row = cursor.fetchone()
+        if referral_row:
+            referrer_address, referral_code = referral_row
+            REFERRAL_FEE_RATE = 0.0001  # 0.01%
+            referral_earnings = total_value * REFERRAL_FEE_RATE
+            cursor.execute('''
+                UPDATE referrals 
+                SET total_earnings = total_earnings + ?,
+                    total_trades_count = total_trades_count + 1,
+                    total_volume = total_volume + ?
+                WHERE referred_address = ?
+            ''', (referral_earnings, total_value, trader_address))
+        
         cursor.execute('UPDATE tokens SET bonding_curve_state = ?, current_price = ?, market_cap = ? WHERE asa_id = ?',
                       (json.dumps(new_state.to_dict()), result['new_price'], result['new_supply'] * result['new_price'], asa_id))
-        cursor.execute('INSERT INTO trades (asa_id, trader_address, trade_type, amount, price, transaction_id, creator_fee, platform_fee, total_value) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                      (asa_id, trader_address, 'sell', token_amount, result['new_price'], data.get('transaction_id', ''), creator_fee, platform_fee, total_value))
+        cursor.execute('INSERT INTO trades (asa_id, trader_address, trade_type, amount, price, transaction_id, creator_fee, platform_fee, total_value, referral_code, referral_earnings) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                      (asa_id, trader_address, 'sell', token_amount, result['new_price'], data.get('transaction_id', ''), creator_fee, platform_fee, total_value, referral_code, referral_earnings))
+        
+        # Record referral earnings if applicable
+        if referral_row and referral_earnings > 0:
+            trade_id = cursor.lastrowid
+            cursor.execute('''
+                INSERT INTO referral_earnings (referrer_address, referred_address, trade_id, earnings, trade_value)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (referrer_address, trader_address, trade_id, referral_earnings, total_value))
         
         conn.commit()
         conn.close()

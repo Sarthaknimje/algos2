@@ -930,6 +930,86 @@ class WebScraper:
             return None
     
     @staticmethod
+    def scrape_linkedin_profile(profile_url: str) -> Optional[Dict]:
+        """
+        Scrape LinkedIn profile to get followers count
+        Format: https://www.linkedin.com/in/username/
+        """
+        try:
+            # Extract username from URL
+            username_match = re.search(r'/in/([^/?]+)', profile_url)
+            if not username_match:
+                return None
+            
+            username = username_match.group(1)
+            
+            # Try to get followers from meta tags
+            headers = WebScraper.get_headers()
+            headers.update({
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Referer': 'https://www.google.com/',
+            })
+            
+            try:
+                response = requests.get(profile_url, headers=headers, timeout=15, allow_redirects=True)
+                if response.status_code == 200:
+                    soup = BeautifulSoup(response.text, 'html.parser')
+                    page_text = response.text
+                    
+                    # Try to find followers in various formats
+                    followers = 0
+                    
+                    # Pattern 1: "5,400+ followers" or "5.4K followers"
+                    follower_patterns = [
+                        r'([\d,]+)\+?\s*followers?',
+                        r'([\d.]+)\s*([KMB])\s*followers?',
+                        r'"followersCount":\s*(\d+)',
+                        r'followers["\']?\s*:\s*(\d+)',
+                        r'(\d+)\s*followers?',
+                    ]
+                    
+                    for pattern in follower_patterns:
+                        match = re.search(pattern, page_text, re.IGNORECASE)
+                        if match:
+                            if len(match.groups()) == 2:
+                                # Abbreviated format (5.4K)
+                                num = float(match.group(1))
+                                suffix = match.group(2).upper()
+                                multiplier = {'K': 1000, 'M': 1000000, 'B': 1000000000}.get(suffix, 1)
+                                followers = int(num * multiplier)
+                            else:
+                                # Exact format
+                                followers_str = match.group(1).replace(',', '')
+                                if followers_str.isdigit():
+                                    followers = int(followers_str)
+                            
+                            if followers > 0:
+                                logger.info(f"Found LinkedIn followers: {followers:,}")
+                                break
+                    
+                    # Also try meta tags
+                    if followers == 0:
+                        meta_followers = soup.find('meta', attrs={'name': re.compile(r'followers', re.I)})
+                        if meta_followers:
+                            content = meta_followers.get('content', '')
+                            num_match = re.search(r'(\d+)', content.replace(',', ''))
+                            if num_match:
+                                followers = int(num_match.group(1))
+                    
+                    return {
+                        'username': username,
+                        'followers': followers,
+                        'url': profile_url
+                    }
+            except Exception as e:
+                logger.warning(f"LinkedIn profile scrape error: {e}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error scraping LinkedIn profile: {e}")
+            return None
+    
+    @staticmethod
     def _parse_count(count_str: str) -> int:
         """Parse count string like '1.2K' or '5M' to integer"""
         try:

@@ -32,7 +32,8 @@ import {
   Link as LinkIcon,
   Globe,
   Wallet,
-  Bookmark
+  Bookmark,
+  X
 } from 'lucide-react'
 import { useWallet } from '../contexts/WalletContext'
 import { socialMediaService, SocialMediaContent } from '../services/socialMediaService'
@@ -331,7 +332,13 @@ const MultiPlatformTokenization: React.FC = () => {
       console.log('✅ Success modal should now be visible')
     } catch (error: any) {
       console.error('Tokenization error:', error)
-      setError(`Tokenization failed: ${error.message || 'Unknown error occurred'}`)
+      
+      // Handle network mismatch error specifically
+      if (error?.name === 'NetworkMismatchError' || error?.message?.includes('Network mismatch') || error?.message?.includes('different networks')) {
+        setError('⚠️ Network Mismatch!\n\nPlease ensure your Pera Wallet is set to TESTNET.\n\nTo fix:\n1. Open Pera Wallet app\n2. Go to Settings\n3. Switch to Testnet\n4. Try again')
+      } else {
+        setError(`Tokenization failed: ${error.message || 'Unknown error occurred'}`)
+      }
       // Don't close modal on error - let user see the error and try again
     } finally {
       setTokenizing(false)
@@ -342,68 +349,99 @@ const MultiPlatformTokenization: React.FC = () => {
     <div className="min-h-screen bg-[#0a0a0f] py-8 relative">
       <PremiumBackground variant="purple" />
       <div className="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
+        {/* Premium Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-12"
+          className="text-center mb-16"
         >
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 backdrop-blur-sm mb-6">
-            <Sparkles className="w-4 h-4 text-violet-400" />
-            <span className="text-sm text-gray-300">Multi-Platform Tokenization</span>
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-violet-500/10 border border-violet-500/30 mb-8">
+            <Rocket className="w-5 h-5 text-violet-400" />
+            <span className="text-sm font-semibold text-violet-300">Content Tokenization</span>
           </div>
-          <div className="flex items-center justify-center space-x-3 mb-4">
-            <motion.div 
-              className="w-14 h-14 bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-2xl flex items-center justify-center"
-              animate={{ rotate: [0, 5, -5, 0] }}
-              transition={{ duration: 4, repeat: Infinity }}
-            >
-              <Rocket className="w-8 h-8 text-white" />
-            </motion.div>
-            <h1 className="text-4xl md:text-5xl font-bold text-white">
-              Tokenize Your <span className="bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">Content</span>
-            </h1>
-          </div>
-          <p className="text-xl text-gray-400 max-w-2xl mx-auto">
-            Transform your social media content into tradeable tokens on Algorand blockchain.
-            <span className="block mt-2 text-sm text-emerald-400">
-              ✨ FREE - No API keys required! Just paste your content URL.
+          <motion.div 
+            className="w-20 h-20 bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-violet-500/25"
+            animate={{ rotate: [0, 5, -5, 0] }}
+            transition={{ duration: 4, repeat: Infinity }}
+          >
+            <Coins className="w-10 h-10 text-white" />
+          </motion.div>
+          <h1 className="text-5xl md:text-6xl font-bold text-white mb-6">
+            Transform Your Content Into
+            <span className="block bg-gradient-to-r from-violet-400 via-fuchsia-400 to-cyan-400 bg-clip-text text-transparent">
+              Digital Assets
             </span>
+          </h1>
+          <p className="text-xl text-gray-300 max-w-3xl mx-auto mb-6 leading-relaxed">
+            Monetize your social media content by creating tradeable tokens on the Algorand blockchain. 
+            Your audience can invest in your success, and you earn from every trade.
           </p>
+          <div className="flex flex-wrap items-center justify-center gap-6 mt-8 text-sm">
+            <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/30">
+              <Zap className="w-4 h-4 text-emerald-400" />
+              <span className="text-emerald-300">Instant Tokenization</span>
+            </div>
+            <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-violet-500/10 border border-violet-500/30">
+              <TrendingUp className="w-4 h-4 text-violet-400" />
+              <span className="text-violet-300">5% Creator Earnings</span>
+            </div>
+            <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-cyan-500/10 border border-cyan-500/30">
+              <Shield className="w-4 h-4 text-cyan-400" />
+              <span className="text-cyan-300">Secure & Verified</span>
+            </div>
+          </div>
         </motion.div>
 
-        {/* Platform Selection */}
+        {/* Platform Selection - Premium Design */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="mb-8"
+          className="mb-12"
         >
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <h2 className="text-2xl font-bold text-white mb-6 text-center">Select Your Platform</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
             {(['instagram', 'twitter', 'linkedin', 'youtube'] as Platform[]).map((platform) => {
               const Icon = platformIcons[platform]
               const colorClass = platformColors[platform]
               const isSelected = selectedPlatform === platform
 
               return (
-                <button
+                <motion.button
                   key={platform}
                   onClick={() => handlePlatformSelect(platform)}
-                  className={`p-6 rounded-2xl border-2 transition-all ${
+                  whileHover={{ scale: 1.05, y: -5 }}
+                  whileTap={{ scale: 0.95 }}
+                  className={`relative p-8 rounded-3xl border-2 transition-all duration-300 overflow-hidden group ${
                     isSelected
-                      ? `bg-gradient-to-r ${colorClass} border-transparent text-white shadow-lg scale-105`
+                      ? `bg-gradient-to-br ${colorClass} border-transparent text-white shadow-2xl`
                       : 'bg-white/5 border-white/10 text-gray-300 hover:bg-white/10 hover:border-white/20'
                   }`}
                 >
-                  <Icon className="w-8 h-8 mx-auto mb-2" />
-                  <div className="font-bold">{platformNames[platform]}</div>
-                  {platform === 'youtube' && (
-                    <div className="text-xs mt-1 opacity-75">API Required</div>
+                  {isSelected && (
+                    <motion.div
+                      className="absolute inset-0 bg-white/10"
+                      animate={{ opacity: [0.5, 1, 0.5] }}
+                      transition={{ duration: 2, repeat: Infinity }}
+                    />
                   )}
-                  {platform !== 'youtube' && (
-                    <div className="text-xs mt-1 opacity-75">FREE Scraping</div>
+                  <div className="relative z-10">
+                    <Icon className={`w-12 h-12 mx-auto mb-3 ${isSelected ? 'text-white' : 'text-gray-400 group-hover:text-white'}`} />
+                    <div className="font-bold text-lg mb-1">{platformNames[platform]}</div>
+                    <div className={`text-xs ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>
+                      {platform === 'youtube' ? 'Connect Channel' : 'Paste URL'}
+                    </div>
+                  </div>
+                  {isSelected && (
+                    <motion.div
+                      className="absolute top-2 right-2"
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                    >
+                      <CheckCircle className="w-6 h-6 text-white" />
+                    </motion.div>
                   )}
-                </button>
+                </motion.button>
               )
             })}
           </div>
@@ -486,54 +524,62 @@ const MultiPlatformTokenization: React.FC = () => {
                 </motion.div>
               )}
 
-              <button
+              <motion.button
                 onClick={handleScrape}
                 disabled={scraping || !contentUrl.trim()}
-                className="w-full py-4 bg-gradient-to-r from-primary-500 to-secondary-500 text-white rounded-xl font-bold text-lg hover:from-primary-600 hover:to-secondary-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                className="w-full py-4 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white rounded-xl font-bold text-lg hover:from-violet-700 hover:to-fuchsia-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 shadow-lg shadow-violet-500/25"
               >
                 {scraping ? (
                   <>
                     <Loader className="w-5 h-5 animate-spin" />
-                    <span>Scraping Content...</span>
+                    <span>Fetching Content...</span>
                   </>
                 ) : (
                   <>
                     <Zap className="w-5 h-5" />
-                    <span>Scrape & Verify Content</span>
+                    <span>Fetch Content Details</span>
                   </>
                 )}
-              </button>
+              </motion.button>
             </div>
           </motion.div>
         )}
 
-        {/* Scraped Content Display */}
+        {/* Content Preview Display - Premium Design */}
         {scrapedContent && (
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-white/5 backdrop-blur-sm rounded-2xl overflow-hidden border border-white/10 mb-8"
+            className="bg-gradient-to-br from-white/5 via-white/5 to-white/5 backdrop-blur-xl rounded-3xl overflow-hidden border border-white/10 mb-8 shadow-2xl"
           >
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center space-x-3">
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center space-x-4">
                   {(() => {
                     const Icon = platformIcons[scrapedContent.platform as Platform]
                     const colorClass = platformColors[scrapedContent.platform as Platform]
                     return (
-                      <div className={`bg-gradient-to-r ${colorClass} p-3 rounded-xl`}>
-                        <Icon className="w-6 h-6 text-white" />
+                      <div className={`bg-gradient-to-r ${colorClass} p-4 rounded-2xl shadow-lg`}>
+                        <Icon className="w-8 h-8 text-white" />
                       </div>
                     )
                   })()}
                   <div>
-                    <h3 className="text-white font-bold text-xl">{scrapedContent.title}</h3>
+                    <h3 className="text-white font-bold text-2xl mb-1">{scrapedContent.title}</h3>
                     {scrapedContent.authorName && (
-                      <p className="text-gray-400 text-sm">@{scrapedContent.authorName}</p>
+                      <p className="text-gray-400 text-sm flex items-center gap-2">
+                        <Users className="w-4 h-4" />
+                        @{scrapedContent.authorName}
+                      </p>
                     )}
                   </div>
                 </div>
-                <CheckCircle className="w-8 h-8 text-green-400" />
+                <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/20 border border-emerald-500/30">
+                  <CheckCircle className="w-5 h-5 text-emerald-400" />
+                  <span className="text-emerald-300 text-sm font-semibold">Ready to Tokenize</span>
+                </div>
               </div>
 
               {/* Content Preview - Full screen for Instagram Reels, standard for others */}

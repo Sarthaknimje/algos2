@@ -215,34 +215,75 @@ const Dashboard: React.FC = () => {
     .sort((a, b) => (b.volume_24h || 0) - (a.volume_24h || 0))
     .slice(0, 5)
 
-  // Platform statistics
+  // Platform statistics - calculate real-time market cap
   const platformStats = {
     youtube: {
       count: tokens.filter(t => (t.platform?.toLowerCase() || 'youtube') === 'youtube').length,
-      marketCap: tokens.filter(t => (t.platform?.toLowerCase() || 'youtube') === 'youtube').reduce((sum, t) => sum + (t.market_cap || 0), 0),
+      marketCap: tokens.filter(t => (t.platform?.toLowerCase() || 'youtube') === 'youtube').reduce((sum, t) => {
+        // Calculate real-time market cap: current_price * total_supply (in ALGO)
+        const marketCapAlgo = (t.current_price || 0) * (t.total_supply || 0)
+        return sum + marketCapAlgo
+      }, 0),
       volume: tokens.filter(t => (t.platform?.toLowerCase() || 'youtube') === 'youtube').reduce((sum, t) => sum + (t.volume_24h || 0), 0),
     },
     instagram: {
       count: tokens.filter(t => t.platform?.toLowerCase() === 'instagram').length,
-      marketCap: tokens.filter(t => t.platform?.toLowerCase() === 'instagram').reduce((sum, t) => sum + (t.market_cap || 0), 0),
+      marketCap: tokens.filter(t => t.platform?.toLowerCase() === 'instagram').reduce((sum, t) => {
+        const marketCapAlgo = (t.current_price || 0) * (t.total_supply || 0)
+        return sum + marketCapAlgo
+      }, 0),
       volume: tokens.filter(t => t.platform?.toLowerCase() === 'instagram').reduce((sum, t) => sum + (t.volume_24h || 0), 0),
     },
     twitter: {
       count: tokens.filter(t => t.platform?.toLowerCase() === 'twitter').length,
-      marketCap: tokens.filter(t => t.platform?.toLowerCase() === 'twitter').reduce((sum, t) => sum + (t.market_cap || 0), 0),
+      marketCap: tokens.filter(t => t.platform?.toLowerCase() === 'twitter').reduce((sum, t) => {
+        const marketCapAlgo = (t.current_price || 0) * (t.total_supply || 0)
+        return sum + marketCapAlgo
+      }, 0),
       volume: tokens.filter(t => t.platform?.toLowerCase() === 'twitter').reduce((sum, t) => sum + (t.volume_24h || 0), 0),
     },
     linkedin: {
       count: tokens.filter(t => t.platform?.toLowerCase() === 'linkedin').length,
-      marketCap: tokens.filter(t => t.platform?.toLowerCase() === 'linkedin').reduce((sum, t) => sum + (t.market_cap || 0), 0),
+      marketCap: tokens.filter(t => t.platform?.toLowerCase() === 'linkedin').reduce((sum, t) => {
+        const marketCapAlgo = (t.current_price || 0) * (t.total_supply || 0)
+        return sum + marketCapAlgo
+      }, 0),
       volume: tokens.filter(t => t.platform?.toLowerCase() === 'linkedin').reduce((sum, t) => sum + (t.volume_24h || 0), 0),
     },
   }
 
-  const formatCurrency = (num: number) => {
-    if (num >= 1000000) return '$' + (num / 1000000).toFixed(2) + 'M'
-    if (num >= 1000) return '$' + (num / 1000).toFixed(2) + 'K'
-    return '$' + num.toFixed(2)
+  // ALGO to USD conversion rate (approximate)
+  const ALGO_TO_USD = 0.15
+
+  const formatCurrency = (num: number | null | undefined, isAlgo: boolean = false) => {
+    // Handle invalid values
+    if (num === null || num === undefined || isNaN(num) || num === 0) return '$0.00'
+    
+    // Ensure num is a valid number
+    const validNum = Number(num)
+    if (isNaN(validNum) || validNum === 0) return '$0.00'
+    
+    // Convert ALGO to USD if needed
+    const usdValue = isAlgo ? validNum * ALGO_TO_USD : validNum
+    
+    // Ensure usdValue is valid
+    if (isNaN(usdValue) || usdValue === 0) return '$0.00'
+    
+    // Format with appropriate suffix (only use B for values >= 1 billion)
+    if (usdValue >= 1000000000) {
+      return '$' + (usdValue / 1000000000).toFixed(2) + 'B'
+    }
+    if (usdValue >= 1000000) {
+      return '$' + (usdValue / 1000000).toFixed(2) + 'M'
+    }
+    if (usdValue >= 1000) {
+      return '$' + (usdValue / 1000).toFixed(2) + 'K'
+    }
+    // For values less than $1000, show 2 decimal places if less than $1, otherwise no decimals
+    if (usdValue < 1) {
+      return '$' + usdValue.toFixed(4)
+    }
+    return '$' + usdValue.toFixed(2)
   }
 
   return (
@@ -383,11 +424,11 @@ const Dashboard: React.FC = () => {
             <div className="space-y-1 text-sm">
               <div className="flex justify-between">
                 <span className="text-gray-400">Market Cap</span>
-                <span className="text-white font-medium">{formatCurrency(platformStats.youtube.marketCap)}</span>
+                <span className="text-white font-medium">{formatCurrency(platformStats.youtube.marketCap, true)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">24h Volume</span>
-                <span className="text-red-400 font-medium">{formatCurrency(platformStats.youtube.volume)}</span>
+                <span className="text-red-400 font-medium">{formatCurrency(platformStats.youtube.volume, true)}</span>
               </div>
             </div>
           </div>
@@ -406,11 +447,11 @@ const Dashboard: React.FC = () => {
             <div className="space-y-1 text-sm">
               <div className="flex justify-between">
                 <span className="text-gray-400">Market Cap</span>
-                <span className="text-white font-medium">{formatCurrency(platformStats.instagram.marketCap)}</span>
+                <span className="text-white font-medium">{formatCurrency(platformStats.instagram.marketCap, true)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">24h Volume</span>
-                <span className="text-pink-400 font-medium">{formatCurrency(platformStats.instagram.volume)}</span>
+                <span className="text-pink-400 font-medium">{formatCurrency(platformStats.instagram.volume, true)}</span>
               </div>
             </div>
           </div>
@@ -429,11 +470,11 @@ const Dashboard: React.FC = () => {
             <div className="space-y-1 text-sm">
               <div className="flex justify-between">
                 <span className="text-gray-400">Market Cap</span>
-                <span className="text-white font-medium">{formatCurrency(platformStats.twitter.marketCap)}</span>
+                <span className="text-white font-medium">{formatCurrency(platformStats.twitter.marketCap, true)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">24h Volume</span>
-                <span className="text-blue-400 font-medium">{formatCurrency(platformStats.twitter.volume)}</span>
+                <span className="text-blue-400 font-medium">{formatCurrency(platformStats.twitter.volume, true)}</span>
               </div>
             </div>
           </div>
@@ -452,11 +493,11 @@ const Dashboard: React.FC = () => {
             <div className="space-y-1 text-sm">
               <div className="flex justify-between">
                 <span className="text-gray-400">Market Cap</span>
-                <span className="text-white font-medium">{formatCurrency(platformStats.linkedin.marketCap)}</span>
+                <span className="text-white font-medium">{formatCurrency(platformStats.linkedin.marketCap, true)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">24h Volume</span>
-                <span className="text-sky-400 font-medium">{formatCurrency(platformStats.linkedin.volume)}</span>
+                <span className="text-sky-400 font-medium">{formatCurrency(platformStats.linkedin.volume, true)}</span>
               </div>
             </div>
           </div>
